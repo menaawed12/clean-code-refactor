@@ -2,6 +2,21 @@
 
 A portable AI coding skill for behavior-preserving refactoring, lint remediation, duplicate detection, and secure, maintainable code across major languages.
 
+## Language Support
+
+The skill applies universal security, reliability, maintainability, lint, duplicate-detection, and test-quality rules to every language. It also provides dedicated hardening guidance for these major ecosystems:
+
+| Ecosystem | Languages and artifacts |
+| --- | --- |
+| Web and application | Python, JavaScript, TypeScript, PHP, Ruby, Java, Kotlin, Scala, C#, F#, Visual Basic, and .NET |
+| Systems and Apple platforms | C, C++, Objective-C, Rust, Go, and Swift |
+| Mobile and UI | Dart and Flutter |
+| Functional and concurrent | Elixir, Erlang, Clojure, and Haskell |
+| Scripting and data | Bash, PowerShell, Perl, Lua, R, Julia, SQL, JSON, YAML, and TOML |
+| Delivery and infrastructure | Dockerfiles, CI/CD definitions, Terraform/HCL, Kubernetes manifests, and other infrastructure-as-code |
+
+For languages not listed above, the skill uses its universal rules, the repository's pinned toolchain, configured checks, and matching-version official guidance. It does not assume that an idiom from one language is safe or idiomatic in another.
+
 ## Contents
 
 - `SKILL.md` — canonical portable skill instructions.

@@ -27,18 +27,20 @@ Read only the sections relevant to the changed files. Prefer the repository's co
 - Treat `innerHTML`, `dangerouslySetInnerHTML`, DOM URL sinks, redirects, and regular expressions as security-sensitive. Sanitize only with an established, context-appropriate library when raw HTML is required.
 - Await promises deliberately; propagate cancellation with `AbortSignal` where supported; clean up subscriptions, timers, observers, and effects.
 
-## Java and Kotlin
+## Java, Kotlin, and Scala
 
 - Use parameterized queries and framework query builders. Avoid native Java deserialization for untrusted input and restrict polymorphic JSON binding.
 - Close streams, sockets, statements, and transactions with language-native resource management. Set client timeouts and preserve interrupt/cancellation behavior.
 - Make optionality explicit, validate at boundaries, and avoid Kotlin `!!` except after a proven invariant.
 - Do not use reflection, class loading, process execution, or path construction on untrusted values without a narrow allowlist and authorization review.
+- In Scala, model absence and alternatives explicitly, keep effectful work visible, make pattern matches exhaustive, and avoid unsafe casts or reflection-based serialization.
 
-## C# and .NET
+## C#, F#, Visual Basic, and .NET
 
 - Use strongly typed models, nullable reference annotations, parameterized commands, and output encoding in the appropriate rendering context.
 - Make asynchronous code asynchronous end-to-end; avoid `.Result` and `.Wait()` in request paths. Pass cancellation tokens through I/O operations.
 - Dispose `IDisposable` and `IAsyncDisposable` resources deterministically. Avoid unsafe binary deserialization and untrusted reflection or process execution.
+- In F# and Visual Basic, retain the same nullable, parameterization, disposal, cancellation, and authorization controls; do not bypass them through dynamic or late-bound access.
 
 ## Go
 
@@ -52,18 +54,32 @@ Read only the sections relevant to the changed files. Prefer the repository's co
 - Minimize `unsafe`; isolate it behind a small API with a documented safety contract, tests, and review. Avoid unchecked indexing and integer conversions.
 - Bound async tasks and channels, honor cancellation, and avoid blocking work on async executors.
 
-## C and C++
+## C, C++, and Objective-C
 
 - Prefer memory-safe language features and libraries. Use RAII in C++, explicit ownership in C, checked sizes, and bounded operations; never rely on implicit null termination or integer wraparound.
 - Avoid unsafe copying, formatting, and parsing APIs. Validate lengths and indexes before use; treat signed/unsigned conversions and allocator boundaries as high risk.
 - Compile with the project's highest practical warnings and use configured sanitizers, static analyzers, and fuzz/property tests for changed parsing or boundary logic.
+- In Objective-C, use ARC correctly, validate Objective-C collection and format-string inputs, and avoid unsafe selector dispatch, dynamic loading, or C interop at untrusted boundaries.
 
-## PHP, Ruby, and Swift
+## PHP, Ruby, Swift, and Dart
 
 - Use strict or explicit types where supported and validate at the request boundary. Apply server-side authorization and protect mass assignment with allowlisted attributes.
 - Bind SQL parameters and use auto-escaping templates. Do not interpolate user input into queries, shell commands, paths, regexes, or redirects.
 - Avoid `unserialize`, `Marshal.load`, `eval`, force unwraps, force casts, dynamic loading, and process execution on untrusted data. Use maintained serializers with restricted types.
 - Propagate cancellation through asynchronous work and release external resources predictably.
+- In Dart and Flutter, preserve sound null safety, avoid `dynamic` at trust boundaries, validate platform-channel and JSON data, and cancel streams, subscriptions, timers, and controllers deterministically.
+
+## Elixir, Erlang, Clojure, and Haskell
+
+- Make pattern matches and state transitions exhaustive. Handle unexpected messages, values, and failures rather than allowing an implicit crash path to become a public failure mode.
+- Keep side effects, process ownership, supervision/restart behavior, and bounded concurrency explicit. Do not create unbounded processes, mailboxes, lazy computations, or retries.
+- Avoid atom/keyword/symbol creation or runtime code evaluation from untrusted values. Validate serialized terms and external data before converting them into trusted domain values.
+
+## Perl, Lua, R, and Julia
+
+- Enable the strictest practical language and project checks. Validate shapes, types, dimensions, encodings, paths, and command arguments at boundaries.
+- Avoid `eval`, `load`, dynamic module/package resolution, shell interpolation, unsafe native extensions, and deserializing untrusted objects or workspace files.
+- Make resource cleanup, randomness, numeric precision, parallel execution, and external-process behavior explicit. Keep data-processing jobs bounded and prevent sensitive data from entering logs or exported artifacts.
 
 ## SQL and Data Access
 

@@ -1,7 +1,7 @@
 ---
 name: "clean-code-refactor"
 description: "Refactor, review, and harden code without changing intended behavior. Use for cleanup, code review remediation, extracting responsibilities, simplifying modules, improving tests, lint remediation, duplicate detection, and preventing static-analysis-grade security, reliability, and maintainability issues across major languages. Preserve public contracts, authorization, data integrity, and existing project conventions."
-compatibility: "Language-aware guidance for Python, JavaScript/TypeScript, Java/Kotlin, C#, Go, Rust, C/C++, PHP, Ruby, Swift, SQL, shell, and infrastructure code"
+compatibility: "Language-aware guidance for Python, JavaScript/TypeScript, Java/Kotlin/Scala, C#/.NET, Go, Rust, C/C++/Objective-C, PHP, Ruby, Swift, Dart, Elixir/Erlang, Clojure, Haskell, Perl, Lua, R, Julia, SQL, shell, and infrastructure code"
 metadata:
   author: "Clean Code Refactor Skill"
 ---
@@ -73,6 +73,8 @@ Do not attempt to authenticate with, upload code to, query, or configure an exte
 ## Cross-Language Hardening
 
 Read [language-hardening.md](references/language-hardening.md) when changing a language, sink, runtime feature, or deployment artifact covered there. Apply only the relevant sections.
+
+Apply the Universal Review to every language. For a listed language, follow its dedicated rules; for an unlisted language, use its declared version, standard tooling, and authoritative language documentation to map equivalent controls before editing. Do not apply a language convention across ecosystems when its safety or semantics differ.
 
 Scrutinize dynamic execution, serialization, SQL/query construction, HTML/template rendering, regular expressions, filesystem access, subprocesses, cryptography, async/concurrency, and memory/resource ownership. If the repository configures a SAST tool, dependency audit, formatter, or language-specific analyzer, run the targeted analysis and address findings in changed code.
 

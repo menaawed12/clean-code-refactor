@@ -5,6 +5,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $skillPath = Join-Path $RepositoryRoot 'SKILL.md'
+$readmePath = Join-Path $RepositoryRoot 'README.md'
 $referencePath = Join-Path $RepositoryRoot 'references/language-hardening.md'
 $staticQualityRulesPath = Join-Path $RepositoryRoot 'references/static-quality-rules.md'
 $installerPath = Join-Path $RepositoryRoot 'scripts/install.ps1'
@@ -17,7 +18,7 @@ $requiredHeadings = @(
     '## Completion Report'
 )
 
-foreach ($path in @($skillPath, $referencePath, $staticQualityRulesPath, $installerPath)) {
+foreach ($path in @($skillPath, $readmePath, $referencePath, $staticQualityRulesPath, $installerPath)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         throw "Required file is missing: $path"
     }
@@ -31,6 +32,12 @@ if ($skill -notmatch '(?s)^---\r?\nname: "clean-code-refactor"\r?\ndescription: 
 foreach ($heading in $requiredHeadings) {
     if ($skill -notmatch [regex]::Escape($heading)) {
         throw "SKILL.md is missing required section: $heading"
+    }
+}
+
+foreach ($language in @('Python', 'TypeScript', 'Java', 'Kotlin', 'Scala', 'C#', 'Go', 'Rust', 'Dart', 'Elixir', 'SQL')) {
+    if ($skill -notmatch [regex]::Escape($language)) {
+        throw "SKILL.md is missing language support: $language"
     }
 }
 
@@ -52,6 +59,11 @@ foreach ($editor in @('cursor', 'copilot', 'claude', 'codex', 'windsurf', 'cline
     if ($installer -notmatch "'$editor'") {
         throw "Installer is missing editor target: $editor"
     }
+}
+
+$readme = Get-Content -LiteralPath $readmePath -Raw
+if ($readme -notmatch '## Language Support') {
+    throw 'README.md is missing the language support section.'
 }
 
 $markdownFiles = Get-ChildItem -LiteralPath $RepositoryRoot -Recurse -File -Filter '*.md'
