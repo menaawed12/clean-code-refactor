@@ -4,8 +4,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$skillPath = Join-Path $RepositoryRoot '.cursor/skills/clean-code-refactor/SKILL.md'
-$referencePath = Join-Path $RepositoryRoot '.cursor/skills/clean-code-refactor/references/language-hardening.md'
+$skillPath = Join-Path $RepositoryRoot 'SKILL.md'
+$referencePath = Join-Path $RepositoryRoot 'references/language-hardening.md'
 $requiredHeadings = @(
     '## Workflow',
     '## Quality Gate: Clean as You Code',

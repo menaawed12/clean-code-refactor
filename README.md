@@ -4,13 +4,13 @@ A portable Cursor skill for behavior-preserving refactoring, lint remediation, d
 
 ## Contents
 
-- `.cursor/skills/clean-code-refactor/SKILL.md` — the Cursor skill.
-- `.cursor/skills/clean-code-refactor/references/language-hardening.md` — language and runtime-specific review guidance.
+- `SKILL.md` — the Cursor skill.
+- `references/language-hardening.md` — language and runtime-specific review guidance.
 - `scripts/validate-skill.ps1` — validates the package structure and required instructions.
 
 ## Install
 
-Copy the repository's `.cursor` directory into the root of a target project, preserving its structure. Merge with that project's existing `.cursor` directory if it already has one.
+Copy `SKILL.md` and the `references/` directory into the root of a target project, preserving their relative paths.
 
 Keep project-specific architecture, test commands, and deployment rules in separate project rules. This skill discovers and obeys those local conventions rather than replacing them.
 
