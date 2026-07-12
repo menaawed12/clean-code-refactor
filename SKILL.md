@@ -18,15 +18,27 @@ Honor the requested scope. Treat a request to refactor as behavior-preserving un
 
 Make the smallest coherent change that improves readability, cohesion, testability, or maintainability. Leave the code easier to navigate than it was found, without adding abstractions the current code does not need.
 
+## Repository Profile and Policy
+
+Start substantial work by reading the repository configuration or running `scripts/profile-repository.ps1 -Path <repository-root>`. The profiler is local and read-only; it identifies language, framework, check, delivery, and risk signals without running project commands or contacting external services.
+
+Select the narrowest applicable policy profile: **strict** for security-critical or new services; **legacy-safe** for incremental change in fragile systems; **api-service**, **frontend**, **mobile**, **data**, or **infrastructure** for domain-specific gates. Read [policy-and-framework-guidance.md](references/policy-and-framework-guidance.md) when selecting a profile or changing a supported framework.
+
 ## Workflow
 
-1. Inspect the target, direct callers, tests, and nearest analogous implementation before editing. For public interface, route, schema, or type changes, inspect the consuming contract.
+1. Profile the repository and inspect the target, direct callers, tests, and nearest analogous implementation before editing. For public interface, route, schema, or type changes, inspect the consuming contract.
 2. Inspect the repository's language version, lockfiles, linters, test configuration, and secure coding guidance before relying on a framework-specific pattern. Consult Context7 when available; otherwise consult matching-version official documentation.
 3. State the protected behavior and invariants before a non-trivial refactor. Preserve public response fields, status codes, route names, permissions, migration compatibility, and UI behavior unless the request says otherwise.
 4. Classify meaningful findings as **security**, **reliability**, **maintainability**, or a **security hotspot** requiring contextual review. Resolve the first three in changed code; explicitly review, mitigate, or justify every hotspot.
 5. Establish a baseline with the narrowest configured formatter, linter, type checker, duplicate detector, test runner, and static analyzer before editing. Record unrelated pre-existing failures separately.
 6. Refactor in small, reviewable steps. Keep business rules close to their domain; make names, mutations, ownership, side effects, and error handling explicit.
 7. Add or adjust focused regression tests. Rerun the relevant quality checks and report any checks not run.
+
+## Risk-Based Gates and Change Impact
+
+Increase review depth, test coverage, and required evidence when a change affects authentication, authorization, secrets, payment or personal data, public endpoints, database schema or migrations, concurrency, background jobs, infrastructure, or third-party integration.
+
+Before refactoring such work, identify inputs, trust boundaries, callers, consumers, data ownership, compatibility constraints, failure and rollback behavior, and observability. Read [api-and-data-safety.md](references/api-and-data-safety.md) for public APIs, events, queries, cache keys, transactions, and migrations.
 
 ## Quality Gate: Clean as You Code
 
@@ -64,6 +76,10 @@ Do not suppress lint, static-analysis, or duplication findings in changed code w
 - Design each change so untrusted data has a visible path: source → validation/normalization → domain logic → encoded or parameterized sink. Never interpolate untrusted data into code, queries, commands, HTML, paths, or redirects.
 - Prefer standard-library or maintained platform APIs. Do not add a dependency for a few lines of clear code.
 
+## Tests, Performance, and Supply Chain
+
+Read [test-performance-and-supply-chain.md](references/test-performance-and-supply-chain.md) when changing tests, hot paths, data access, dependencies, build configuration, CI, containers, or infrastructure. Check test meaning and stability—not only coverage—and prevent unbounded work, unsafe dependencies, and sensitive artifact exposure.
+
 ## Self-Contained Static Quality Rules
 
 Apply [static-quality-rules.md](references/static-quality-rules.md) to changed code whether or not the repository has a static-analysis service. It defines security, reliability, maintainability, test, and duplication rules comparable to a mature static quality gate.
@@ -84,11 +100,13 @@ Run the smallest relevant checks first, then the broader checks justified by the
 
 Always inspect the final diff, run `git diff --check`, and do not claim a check passed unless it was run. Distinguish a pre-existing failure from one introduced by the change.
 
+For non-trivial work, use [structured-review-report.md](references/structured-review-report.md) to report scope, risk, findings, decisions, and verification consistently. Do not invent results for tools that were not run.
+
 ## Completion Report
 
 Summarize:
 
 1. The code structure or smell improved.
 2. The behavior, security, and reliability invariants preserved.
-3. Security, reliability, maintainability, hotspot, lint, and duplication results.
+3. Security, reliability, maintainability, hotspot, lint, duplication, performance, and supply-chain results.
 4. Tests and checks run, plus intentionally skipped checks and narrow exceptions.

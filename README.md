@@ -17,13 +17,34 @@ The skill applies universal security, reliability, maintainability, lint, duplic
 
 For languages not listed above, the skill uses its universal rules, the repository's pinned toolchain, configured checks, and matching-version official guidance. It does not assume that an idiom from one language is safe or idiomatic in another.
 
+## Advanced Capabilities
+
+- Local, read-only repository profiling to detect language, framework, configured checks, delivery assets, and high-risk change signals.
+- Policy profiles for strict, legacy-safe, API service, frontend, mobile, data, and infrastructure work.
+- Change-impact analysis for public APIs, consumers, events, schemas, migrations, caches, and third-party integrations.
+- Framework-aware hardening for major web, backend, mobile, and infrastructure ecosystems.
+- Risk-based quality gates for authentication, authorization, secrets, payments, PII, public endpoints, migrations, concurrency, and delivery changes.
+- Test-quality, performance, resilience, dependency, license, artifact, and supply-chain review rules.
+- A severity-based, structured review report that records evidence, verification, exceptions, and residual risk.
+
+Profile a target repository before non-trivial work:
+
+```powershell
+.\scripts\profile-repository.ps1 -Path C:\path\to\project
+```
+
 ## Contents
 
 - `SKILL.md` — canonical portable skill instructions.
 - `references/language-hardening.md` — language and runtime-specific review guidance.
 - `references/static-quality-rules.md` — self-contained static quality, security, reliability, and maintainability rules.
+- `references/policy-and-framework-guidance.md` — policy profiles and framework-aware review guidance.
+- `references/api-and-data-safety.md` — API, schema, migration, query, event, cache, and integration safety rules.
+- `references/test-performance-and-supply-chain.md` — test quality, performance, resilience, and dependency guidance.
+- `references/structured-review-report.md` — severity-based review-report format.
 - `scripts/validate-skill.ps1` — validates the package structure and required instructions.
 - `scripts/install.ps1` — installs the skill in an editor-specific project format.
+- `scripts/profile-repository.ps1` — reads a target repository and prints a suggested review profile.
 
 ## Install
 

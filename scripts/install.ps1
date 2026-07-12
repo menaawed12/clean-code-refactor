@@ -34,9 +34,10 @@ $ErrorActionPreference = 'Stop'
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $skillSource = Join-Path $repositoryRoot 'SKILL.md'
 $referenceSource = Join-Path $repositoryRoot 'references'
+$profileSource = Join-Path $repositoryRoot 'scripts/profile-repository.ps1'
 $targetRoot = [System.IO.Path]::GetFullPath($TargetPath)
 
-foreach ($path in @($skillSource, $referenceSource)) {
+foreach ($path in @($skillSource, $referenceSource, $profileSource)) {
     if (-not (Test-Path -LiteralPath $path)) {
         throw "Required source is missing: $path"
     }
@@ -55,6 +56,14 @@ $ruleBody = $skillBody.Replace(
 $ruleBody = $ruleBody.Replace(
     'references/static-quality-rules.md',
     'clean-code-refactor-references/static-quality-rules.md'
+)
+$ruleBody = $ruleBody.Replace(
+    'references/',
+    'clean-code-refactor-references/'
+)
+$ruleBody = $ruleBody.Replace(
+    'scripts/profile-repository.ps1',
+    'clean-code-refactor-tools/profile-repository.ps1'
 )
 
 function Test-ReplaceAllowed {
@@ -76,6 +85,8 @@ function Copy-SkillFolder {
     New-Item -ItemType Directory -Path $Destination -Force | Out-Null
     Copy-Item -LiteralPath $skillSource -Destination (Join-Path $Destination 'SKILL.md') -Force
     Copy-Item -LiteralPath $referenceSource -Destination (Join-Path $Destination 'references') -Recurse -Force
+    New-Item -ItemType Directory -Path (Join-Path $Destination 'scripts') -Force | Out-Null
+    Copy-Item -LiteralPath $profileSource -Destination (Join-Path $Destination 'scripts/profile-repository.ps1') -Force
     Write-Host "Installed skill folder: $Destination"
 }
 
@@ -90,8 +101,13 @@ function Install-RuleFile {
     }
     $parent = Split-Path -Parent $Destination
     $referenceDestination = Join-Path $parent 'clean-code-refactor-references'
+    $toolDestination = Join-Path $parent 'clean-code-refactor-tools'
     if ((Test-Path -LiteralPath $referenceDestination) -and -not $Force) {
         Write-Warning "Skipped rule because its reference directory already exists (use -Force to replace): $referenceDestination"
+        return
+    }
+    if ((Test-Path -LiteralPath $toolDestination) -and -not $Force) {
+        Write-Warning "Skipped rule because its tool directory already exists (use -Force to replace): $toolDestination"
         return
     }
     New-Item -ItemType Directory -Path $parent -Force | Out-Null
@@ -118,6 +134,8 @@ function Install-RuleFile {
     }
     Set-Content -LiteralPath $Destination -Value $content -NoNewline
     Copy-Item -LiteralPath $referenceSource -Destination $referenceDestination -Recurse -Force
+    New-Item -ItemType Directory -Path $toolDestination -Force | Out-Null
+    Copy-Item -LiteralPath $profileSource -Destination (Join-Path $toolDestination 'profile-repository.ps1') -Force
     Write-Host "Installed rule: $Destination"
 }
 
