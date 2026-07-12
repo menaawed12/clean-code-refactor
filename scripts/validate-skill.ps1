@@ -13,6 +13,7 @@ $apiSafetyPath = Join-Path $RepositoryRoot 'references/api-and-data-safety.md'
 $testSupplyChainPath = Join-Path $RepositoryRoot 'references/test-performance-and-supply-chain.md'
 $reviewReportPath = Join-Path $RepositoryRoot 'references/structured-review-report.md'
 $installerPath = Join-Path $RepositoryRoot 'scripts/install.ps1'
+$bashInstallerPath = Join-Path $RepositoryRoot 'scripts/install.sh'
 $profileScriptPath = Join-Path $RepositoryRoot 'scripts/profile-repository.ps1'
 $requiredHeadings = @(
     '## Workflow',
@@ -23,7 +24,7 @@ $requiredHeadings = @(
     '## Completion Report'
 )
 
-foreach ($path in @($skillPath, $readmePath, $referencePath, $staticQualityRulesPath, $policyGuidancePath, $apiSafetyPath, $testSupplyChainPath, $reviewReportPath, $installerPath, $profileScriptPath)) {
+foreach ($path in @($skillPath, $readmePath, $referencePath, $staticQualityRulesPath, $policyGuidancePath, $apiSafetyPath, $testSupplyChainPath, $reviewReportPath, $installerPath, $bashInstallerPath, $profileScriptPath)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         throw "Required file is missing: $path"
     }
@@ -69,6 +70,13 @@ $installer = Get-Content -LiteralPath $installerPath -Raw
 foreach ($editor in @('cursor', 'copilot', 'claude', 'codex', 'windsurf', 'cline', 'roo', 'continue', 'amazonq', 'opencode', 'kilo')) {
     if ($installer -notmatch "'$editor'") {
         throw "Installer is missing editor target: $editor"
+    }
+}
+
+$bashInstaller = Get-Content -LiteralPath $bashInstallerPath -Raw
+foreach ($editor in @('cursor', 'copilot', 'claude', 'codex', 'windsurf', 'cline', 'roo', 'continue', 'amazonq', 'opencode', 'kilo')) {
+    if ($bashInstaller -notmatch "\b$editor\b") {
+        throw "Bash installer is missing editor target: $editor"
     }
 }
 

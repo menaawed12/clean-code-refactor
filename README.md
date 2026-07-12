@@ -44,15 +44,50 @@ Profile a target repository before non-trivial work:
 - `references/structured-review-report.md` — severity-based review-report format.
 - `scripts/validate-skill.ps1` — validates the package structure and required instructions.
 - `scripts/install.ps1` — installs the skill in an editor-specific project format.
+- `scripts/install.sh` — Bash installer for macOS and Linux.
 - `scripts/profile-repository.ps1` — reads a target repository and prints a suggested review profile.
 
 ## Install
 
-Use the installer from this repository to add the skill to a target project:
+Choose the installation method that fits your environment. All methods use the same canonical `SKILL.md`, references, and local profiler; none executes remote code.
+
+### 1. Windows PowerShell
 
 ```powershell
 .\scripts\install.ps1 -Editor all -TargetPath C:\path\to\project
 ```
+
+### 2. macOS or Linux Bash
+
+```bash
+bash ./scripts/install.sh --editor all --target /path/to/project
+```
+
+### 3. Install one editor only
+
+Use either installer with a specific target. This is useful for a project that uses one coding agent:
+
+```powershell
+.\scripts\install.ps1 -Editor opencode -TargetPath C:\path\to\project
+```
+
+```bash
+bash ./scripts/install.sh --editor cursor --target /path/to/project
+```
+
+### 4. Git clone, then install
+
+Use a normal Git checkout when you want to inspect or pin the source before installation:
+
+```bash
+git clone https://github.com/menaawed12/clean-code-refactor.git
+cd clean-code-refactor
+bash ./scripts/install.sh --editor all --target /path/to/project
+```
+
+### 5. Manual or air-gapped installation
+
+Download or transfer a reviewed copy of this repository, then copy `SKILL.md`, `references/`, and `scripts/profile-repository.ps1` to the editor location in the table below. For rule-based editors, use the PowerShell or Bash installer from the reviewed local copy to generate the required rule file and supporting folders. This supports environments without internet access or where installation scripts must be reviewed before use.
 
 Supported editor integrations:
 
@@ -71,13 +106,17 @@ Supported editor integrations:
 | OpenCode | `.opencode/skills/clean-code-refactor/` |
 | Kilo Code | `.kilo/rules/clean-code-refactor.md` and a `kilo.jsonc` `instructions` entry |
 
-`-Editor all` installs every project-local integration. Install Codex separately because its native skill location is user-scoped:
+`-Editor all` / `--editor all` installs every project-local integration. Install Codex separately because its native skill location is user-scoped:
 
 ```powershell
 .\scripts\install.ps1 -Editor codex
 ```
 
-Use `-Force` only when replacing this skill's previously installed files. The installer does not overwrite unrelated instructions.
+```bash
+bash ./scripts/install.sh --editor codex
+```
+
+Use `-Force` or `--force` only when replacing this skill's previously installed files. The installers do not overwrite unrelated instructions.
 
 Keep project-specific architecture, test commands, and deployment rules in separate project rules. This skill discovers and obeys those local conventions rather than replacing them.
 
