@@ -1,6 +1,6 @@
 ---
 name: "clean-code-refactor"
-description: "Refactor, review, and harden code without changing intended behavior. Use for cleanup, code review remediation, extracting responsibilities, simplifying modules, improving tests, lint remediation, duplicate detection, and preventing Sonar-style security, reliability, and maintainability issues across major languages. Preserve public contracts, authorization, data integrity, and existing project conventions."
+description: "Refactor, review, and harden code without changing intended behavior. Use for cleanup, code review remediation, extracting responsibilities, simplifying modules, improving tests, lint remediation, duplicate detection, and preventing static-analysis-grade security, reliability, and maintainability issues across major languages. Preserve public contracts, authorization, data integrity, and existing project conventions."
 compatibility: "Language-aware guidance for Python, JavaScript/TypeScript, Java/Kotlin, C#, Go, Rust, C/C++, PHP, Ruby, Swift, SQL, shell, and infrastructure code"
 metadata:
   author: "Clean Code Refactor Skill"
@@ -21,7 +21,7 @@ Make the smallest coherent change that improves readability, cohesion, testabili
 ## Workflow
 
 1. Inspect the target, direct callers, tests, and nearest analogous implementation before editing. For public interface, route, schema, or type changes, inspect the consuming contract.
-2. Inspect the repository's language version, lockfiles, linters, test configuration, static analysis, and secure coding guidance before relying on a framework-specific pattern. Consult Context7 when available; otherwise consult matching-version official documentation.
+2. Inspect the repository's language version, lockfiles, linters, test configuration, and secure coding guidance before relying on a framework-specific pattern. Consult Context7 when available; otherwise consult matching-version official documentation.
 3. State the protected behavior and invariants before a non-trivial refactor. Preserve public response fields, status codes, route names, permissions, migration compatibility, and UI behavior unless the request says otherwise.
 4. Classify meaningful findings as **security**, **reliability**, **maintainability**, or a **security hotspot** requiring contextual review. Resolve the first three in changed code; explicitly review, mitigate, or justify every hotspot.
 5. Establish a baseline with the narrowest configured formatter, linter, type checker, duplicate detector, test runner, and static analyzer before editing. Record unrelated pre-existing failures separately.
@@ -36,7 +36,7 @@ Apply this gate to newly added or modified production code. Do not use it to dem
 - **Reliability:** handle expected failures, cancellation, timeouts, resource release, nullability, integer/range limits, and concurrency explicitly. Do not swallow errors, use unchecked casts, or depend on unspecified evaluation order.
 - **Maintainability:** keep changed units focused, names intentional, public interfaces small, and dependencies directed. Eliminate dead code, misleading comments, needless nesting, duplicate logic with the same reason to change, and unnecessary complexity.
 - **Security hotspots:** manually review authentication, authorization, cryptography, dynamic execution, file handling, redirects, logging, deserialization, and externally controlled URLs even when a scanner reports no exploit.
-- **Evidence:** run configured formatter, compiler/type checker, linter, tests, dependency/SAST scans, and Sonar analysis when present. Treat unreviewed high-severity findings and new test failures as blockers. Record any unavailable or intentionally skipped tool.
+- **Evidence:** run configured formatter, compiler/type checker, linter, tests, dependency/SAST scans, and duplicate detection. Apply the self-contained static quality rules below even when no analyzer is configured. Treat unreviewed high-severity findings and new test failures as blockers. Record any unavailable or intentionally skipped tool.
 
 When comparable metrics are available, use the approved project gate or these defaults: **0 new issues**, **100% of new security hotspots reviewed**, **at least 80% coverage on new executable production code**, and **at most 3% duplicated lines in new code**. Do not manufacture tests or split code solely to satisfy a metric; fix the risk or simplify the design.
 
@@ -44,9 +44,9 @@ When comparable metrics are available, use the approved project gate or these de
 
 Treat lint and duplication findings in changed production code as work to resolve, not advisory output.
 
-1. **Discover configured checks.** Inspect repository and CI configuration for formatters, linters, type checkers, SonarQube/SonarCloud, duplication detectors, pre-commit hooks, and language-native analyzers. Reuse those tools; do not install or replace tooling unless asked.
+1. **Discover configured checks.** Inspect repository and CI configuration for formatters, linters, type checkers, duplication detectors, pre-commit hooks, and language-native analyzers. Reuse those tools; do not install or replace tooling unless asked.
 2. **Lint deliberately.** Apply safe auto-fixes only to files in scope, inspect the resulting diff, then rerun the formatter, linter, and type checker. Fix the underlying code rather than disabling a rule, broadening an ignore, lowering severity, or adding a blanket suppression.
-3. **Detect duplication.** Use configured Sonar or copy-paste detection first. When no detector exists, inspect changed code and nearby modules for repeated blocks, parallel branches, copy-pasted validation, query construction, error handling, tests, and configuration. Compare behavior and reason-to-change, not merely syntax.
+3. **Detect duplication.** Use configured copy-paste detection first. When no detector exists, inspect changed code and nearby modules for repeated blocks, parallel branches, copy-pasted validation, query construction, error handling, tests, and configuration. Compare behavior and reason-to-change, not merely syntax.
 4. **Address actionable duplicates.** Extract a focused domain helper, component, service, template, or data-driven mapping only when duplicated code has the same inputs, behavior, ownership, and expected evolution. Preserve clear call-site intent; do not create catch-all utilities, deep inheritance, flag-heavy functions, or abstractions that couple unrelated domains.
 5. **Prove the result.** Rerun duplicate detection, test shared behavior and callers, and confirm removed code has no remaining references. Keep intentional duplication when it protects independent domain boundaries, readability, generated code, framework-required structure, or test clarity; document the decision briefly.
 
@@ -64,11 +64,17 @@ Do not suppress lint, static-analysis, or duplication findings in changed code w
 - Design each change so untrusted data has a visible path: source → validation/normalization → domain logic → encoded or parameterized sink. Never interpolate untrusted data into code, queries, commands, HTML, paths, or redirects.
 - Prefer standard-library or maintained platform APIs. Do not add a dependency for a few lines of clear code.
 
+## Self-Contained Static Quality Rules
+
+Apply [static-quality-rules.md](references/static-quality-rules.md) to changed code whether or not the repository has a static-analysis service. It defines security, reliability, maintainability, test, and duplication rules comparable to a mature static quality gate.
+
+Do not attempt to authenticate with, upload code to, query, or configure an external code-quality service unless the user explicitly asks. Use local repository tooling when already configured; otherwise perform the documented source-level review and report findings by severity.
+
 ## Cross-Language Hardening
 
 Read [language-hardening.md](references/language-hardening.md) when changing a language, sink, runtime feature, or deployment artifact covered there. Apply only the relevant sections.
 
-Scrutinize dynamic execution, serialization, SQL/query construction, HTML/template rendering, regular expressions, filesystem access, subprocesses, cryptography, async/concurrency, and memory/resource ownership. If the repository configures SonarQube/SonarCloud, a SAST tool, dependency audit, formatter, or language-specific analyzer, run the targeted analysis and address findings in changed code.
+Scrutinize dynamic execution, serialization, SQL/query construction, HTML/template rendering, regular expressions, filesystem access, subprocesses, cryptography, async/concurrency, and memory/resource ownership. If the repository configures a SAST tool, dependency audit, formatter, or language-specific analyzer, run the targeted analysis and address findings in changed code.
 
 ## Verification
 

@@ -52,6 +52,10 @@ $ruleBody = $skillBody.Replace(
     'references/language-hardening.md',
     'clean-code-refactor-references/language-hardening.md'
 )
+$ruleBody = $ruleBody.Replace(
+    'references/static-quality-rules.md',
+    'clean-code-refactor-references/static-quality-rules.md'
+)
 
 function Test-ReplaceAllowed {
     param([string]$Path)
@@ -100,7 +104,8 @@ function Install-RuleFile {
                 "alwaysApply: false`n" +
                 "---`n`n" +
                 $ruleBody +
-                "`n`n@clean-code-refactor-references/language-hardening.md`n"
+                "`n`n@clean-code-refactor-references/language-hardening.md`n" +
+                "@clean-code-refactor-references/static-quality-rules.md`n"
         }
         'continue' {
             $content = "---`n" +

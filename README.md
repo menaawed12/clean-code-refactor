@@ -6,6 +6,7 @@ A portable AI coding skill for behavior-preserving refactoring, lint remediation
 
 - `SKILL.md` — canonical portable skill instructions.
 - `references/language-hardening.md` — language and runtime-specific review guidance.
+- `references/static-quality-rules.md` — self-contained static quality, security, reliability, and maintainability rules.
 - `scripts/validate-skill.ps1` — validates the package structure and required instructions.
 - `scripts/install.ps1` — installs the skill in an editor-specific project format.
 

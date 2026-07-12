@@ -6,6 +6,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $skillPath = Join-Path $RepositoryRoot 'SKILL.md'
 $referencePath = Join-Path $RepositoryRoot 'references/language-hardening.md'
+$staticQualityRulesPath = Join-Path $RepositoryRoot 'references/static-quality-rules.md'
 $installerPath = Join-Path $RepositoryRoot 'scripts/install.ps1'
 $requiredHeadings = @(
     '## Workflow',
@@ -16,7 +17,7 @@ $requiredHeadings = @(
     '## Completion Report'
 )
 
-foreach ($path in @($skillPath, $referencePath, $installerPath)) {
+foreach ($path in @($skillPath, $referencePath, $staticQualityRulesPath, $installerPath)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         throw "Required file is missing: $path"
     }
@@ -35,6 +36,15 @@ foreach ($heading in $requiredHeadings) {
 
 if ($skill -notmatch '\[language-hardening\.md\]\(references/language-hardening\.md\)') {
     throw 'SKILL.md does not link to language-hardening.md.'
+}
+
+if ($skill -notmatch '\[static-quality-rules\.md\]\(references/static-quality-rules\.md\)') {
+    throw 'SKILL.md does not link to static-quality-rules.md.'
+}
+
+$allSkillContent = Get-Content -LiteralPath $skillPath, $referencePath, $staticQualityRulesPath -Raw
+if ($allSkillContent -match 'SonarQube|SonarCloud|Sonar analysis|Sonar-style') {
+    throw 'The skill must not reference or require a Sonar service.'
 }
 
 $installer = Get-Content -LiteralPath $installerPath -Raw
