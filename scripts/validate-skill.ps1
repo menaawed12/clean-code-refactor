@@ -6,6 +6,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $skillPath = Join-Path $RepositoryRoot 'SKILL.md'
 $referencePath = Join-Path $RepositoryRoot 'references/language-hardening.md'
+$installerPath = Join-Path $RepositoryRoot 'scripts/install.ps1'
 $requiredHeadings = @(
     '## Workflow',
     '## Quality Gate: Clean as You Code',
@@ -15,7 +16,7 @@ $requiredHeadings = @(
     '## Completion Report'
 )
 
-foreach ($path in @($skillPath, $referencePath)) {
+foreach ($path in @($skillPath, $referencePath, $installerPath)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         throw "Required file is missing: $path"
     }
@@ -34,6 +35,13 @@ foreach ($heading in $requiredHeadings) {
 
 if ($skill -notmatch '\[language-hardening\.md\]\(references/language-hardening\.md\)') {
     throw 'SKILL.md does not link to language-hardening.md.'
+}
+
+$installer = Get-Content -LiteralPath $installerPath -Raw
+foreach ($editor in @('cursor', 'copilot', 'claude', 'codex', 'windsurf', 'cline', 'roo', 'continue', 'amazonq', 'opencode', 'kilo')) {
+    if ($installer -notmatch "'$editor'") {
+        throw "Installer is missing editor target: $editor"
+    }
 }
 
 $markdownFiles = Get-ChildItem -LiteralPath $RepositoryRoot -Recurse -File -Filter '*.md'
