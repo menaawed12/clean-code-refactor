@@ -42,10 +42,15 @@ Profile a target repository before non-trivial work:
 - `references/api-and-data-safety.md` — API, schema, migration, query, event, cache, and integration safety rules.
 - `references/test-performance-and-supply-chain.md` — test quality, performance, resilience, and dependency guidance.
 - `references/structured-review-report.md` — severity-based review-report format.
-- `scripts/validate-skill.ps1` — validates the package structure and required instructions.
-- `scripts/install.ps1` — installs the skill in an editor-specific project format.
-- `scripts/install.sh` — Bash installer for macOS and Linux.
-- `scripts/profile-repository.ps1` — reads a target repository and prints a suggested review profile.
+- `references/agent-security.md` — agent trust boundaries: untrusted repository content, tool-output injection, command discovery versus execution, and scoped permissions.
+- `integrations/registry.json` — machine-readable editor/agent target registry (single source of truth for installers).
+- `docs/ide-compatibility.md` — human-readable compatibility summary and roadmap.
+- `SECURITY.md` — vulnerability reporting route and design commitments.
+- `scripts/validate-skill.ps1` — validates package structure, links, registry/installer parity, and required instructions.
+- `scripts/install.ps1` — registry-driven installer (Windows PowerShell).
+- `scripts/install.sh` — registry-parity Bash installer for macOS and Linux.
+- `scripts/profile-repository.ps1` — bounded, read-only repository profiler with evidence and confidence reporting.
+- `tests/run-tests.ps1`, `tests/install.sh.tests.sh` — behavioral installer test suites.
 
 ## Install
 
@@ -89,7 +94,7 @@ bash ./scripts/install.sh --editor all --target /path/to/project
 
 Download or transfer a reviewed copy of this repository, then copy `SKILL.md`, `references/`, and `scripts/profile-repository.ps1` to the editor location in the table below. For rule-based editors, use the PowerShell or Bash installer from the reviewed local copy to generate the required rule file and supporting folders. This supports environments without internet access or where installation scripts must be reviewed before use.
 
-Supported editor integrations:
+Supported editor integrations are declared in `integrations/registry.json` and summarized in [docs/ide-compatibility.md](docs/ide-compatibility.md). Both installers are validated against the registry; they cannot drift apart.
 
 | Editor or agent | Installed format |
 | --- | --- |
@@ -106,17 +111,31 @@ Supported editor integrations:
 | OpenCode | `.opencode/skills/clean-code-refactor/` |
 | Kilo Code | `.kilo/rules/clean-code-refactor.md` and a `kilo.jsonc` `instructions` entry |
 
-`-Editor all` / `--editor all` installs every project-local integration. Install Codex separately because its native skill location is user-scoped:
+### Options and behavior
+
+Both installers support the same options (PowerShell spelling shown; Bash uses the long forms):
 
 ```powershell
-.\scripts\install.ps1 -Editor codex
+.\scripts\install.ps1 -Editor cursor -TargetPath C:\path\to\project   # one editor, project scope
+.\scripts\install.ps1 -Editor all -TargetPath C:\path\to\project      # every registry target
+.\scripts\install.ps1 -Editor detected -TargetPath C:\path\to\project # only editors already configured
+.\scripts\install.ps1 -Scope user -UserHome $HOME -WhatIf             # plan a per-user global install
+.\scripts\install.ps1 -Editor codex -List                             # list registry targets
+.\scripts\install.ps1 -Editor all -OutputFormat Json                  # machine-readable plan/result
 ```
 
 ```bash
-bash ./scripts/install.sh --editor codex
+bash ./scripts/install.sh --editor cursor --target /path/to/project
+bash ./scripts/install.sh --scope user --editor claude,cursor,opencode,codex --dry-run
+bash ./scripts/install.sh --editor codex   # user-scoped by default
 ```
 
-Use `-Force` or `--force` only when replacing this skill's previously installed files. The installers do not overwrite unrelated instructions.
+- **Exit codes:** `0` success (intentional skips allowed), `1` one or more targets failed, `2` usage or preflight error. Preflight failures abort before anything is written.
+- **Upgrades:** installs record a `.clean-code-refactor-install.json` receipt with version and file hashes. A re-run updates owned files, removes files the package no longer ships (including nested leftovers), and preserves unrelated files. Without `-Force`/`--force` your modifications to owned files are detected and preserved; use force to overwrite.
+- **Safety:** destinations must resolve inside the declared root; symlinked or junctioned path components are refused, and a failed preflight leaves the filesystem untouched.
+- **User scope:** available where the registry declares it (Claude Code, Cursor, OpenCode, Codex). Redirect homes with `-UserHome`/`--user-home` (and `-CodexHome`/`--codex-home`) for tests or portable installs. Destinations marked `verify-against-docs` should be confirmed against your installed editor's documentation. Global availability never implies automatic execution or elevated privileges.
+
+Use `-Force` or `--force` only when replacing this skill's previously installed files. The installers never overwrite unrelated instructions.
 
 Keep project-specific architecture, test commands, and deployment rules in separate project rules. This skill discovers and obeys those local conventions rather than replacing them.
 
@@ -137,3 +156,23 @@ Review the changed TypeScript files for lint, duplicate code, security, and reli
 ```powershell
 .\scripts\validate-skill.ps1
 ```
+
+Validation checks required files and sections, resolves every relative Markdown link in the package, verifies the rule-body path transformation produces no double-prefixed or broken links, and fails when the registry and either installer drift apart.
+
+## Test
+
+Behavioral suites exercise the installers end-to-end in disposable directories (fresh install, idempotent re-run, unmanaged-install protection, forced upgrades that remove stale and nested files, user-modification protection, dry-run, usage errors, paths with spaces and Unicode, symlink containment, user scope with redirected homes, and JSON output):
+
+```powershell
+.\tests\run-tests.ps1          # PowerShell suite; also runs the bash suite when bash is available
+```
+
+```bash
+bash ./tests/install.sh.tests.sh
+```
+
+GitHub Actions CI (`.github/workflows/ci.yml`) runs validation on Windows PowerShell 5.1 and PowerShell 7, the PowerShell suite, the bash suite on Linux and macOS, ShellCheck, and PSScriptAnalyzer, with read-only permissions and no secrets.
+
+## Security
+
+Local-first by design: no installer, validator, or profiler executes remote code or contacts external services. Destinations are contained and refuse symlink redirection; installed files are recorded with hashes. Vulnerability reporting and design commitments: see [SECURITY.md](SECURITY.md). Agent trust-boundary guidance for untrusted repositories: see [references/agent-security.md](references/agent-security.md).

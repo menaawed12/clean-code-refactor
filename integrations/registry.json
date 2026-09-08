@@ -1,0 +1,221 @@
+{
+  "schemaVersion": 1,
+  "package": {
+    "name": "clean-code-refactor",
+    "version": "1.1.0",
+    "canonicalSkillFile": "SKILL.md",
+    "referenceDir": "references",
+    "profilerSource": "scripts/profile-repository.ps1",
+    "receiptFileName": ".clean-code-refactor-install.json"
+  },
+  "ruleFileLayout": {
+    "referencesDirName": "clean-code-refactor-references",
+    "toolsDirName": "clean-code-refactor-tools",
+    "profilerFileName": "profile-repository.ps1"
+  },
+  "roots": {
+    "project": "Target project directory (-TargetPath / --target).",
+    "codex-home": "Codex home directory (-CodexHome / --codex-home; default $CODEX_HOME or ~/.codex).",
+    "home": "User home directory (-UserHome / --user-home; default $HOME).",
+    "xdg-config": "XDG config directory (default $XDG_CONFIG_HOME or ~/.config)."
+  },
+  "editors": {
+    "agents": {
+      "label": "Shared agents standard (AGENTS.md ecosystem)",
+      "kind": "skill-folder",
+      "scopes": {
+        "project": {
+          "root": "project",
+          "path": ".agents/skills/clean-code-refactor",
+          "pointer": { "file": "AGENTS.md", "skillLink": ".agents/skills/clean-code-refactor/SKILL.md" },
+          "detect": [
+            { "root": "project", "path": ".agents" },
+            { "root": "project", "path": "AGENTS.md" }
+          ]
+        }
+      }
+    },
+    "cursor": {
+      "label": "Cursor",
+      "kind": "rule-file",
+      "scopes": {
+        "project": {
+          "root": "project",
+          "path": ".cursor/rules/clean-code-refactor.mdc",
+          "format": "cursor",
+          "detect": [
+            { "root": "project", "path": ".cursor" },
+            { "root": "home", "path": ".cursor" }
+          ]
+        },
+        "user": {
+          "root": "home",
+          "path": ".cursor/skills/clean-code-refactor",
+          "kind": "skill-folder",
+          "verification": "verify-against-docs",
+          "detect": [
+            { "root": "home", "path": ".cursor" }
+          ]
+        }
+      }
+    },
+    "copilot": {
+      "label": "GitHub Copilot",
+      "kind": "skill-folder",
+      "scopes": {
+        "project": {
+          "root": "project",
+          "path": ".github/skills/clean-code-refactor",
+          "pointer": { "file": ".github/copilot-instructions.md", "skillLink": ".github/skills/clean-code-refactor/SKILL.md" },
+          "detect": [
+            { "root": "project", "path": ".github" }
+          ]
+        }
+      }
+    },
+    "claude": {
+      "label": "Claude Code",
+      "kind": "skill-folder",
+      "scopes": {
+        "project": {
+          "root": "project",
+          "path": ".claude/skills/clean-code-refactor",
+          "detect": [
+            { "root": "project", "path": ".claude" },
+            { "root": "home", "path": ".claude" }
+          ]
+        },
+        "user": {
+          "root": "home",
+          "path": ".claude/skills/clean-code-refactor",
+          "verification": "verify-against-docs",
+          "detect": [
+            { "root": "home", "path": ".claude" }
+          ]
+        }
+      }
+    },
+    "codex": {
+      "label": "Codex CLI",
+      "kind": "skill-folder",
+      "scopes": {
+        "user": {
+          "root": "codex-home",
+          "path": "skills/clean-code-refactor",
+          "detect": [
+            { "root": "codex-home", "path": "skills" }
+          ]
+        }
+      }
+    },
+    "windsurf": {
+      "label": "Windsurf",
+      "kind": "rule-file",
+      "scopes": {
+        "project": {
+          "root": "project",
+          "path": ".windsurf/rules/clean-code-refactor.md",
+          "format": "plain",
+          "detect": [
+            { "root": "project", "path": ".windsurf" },
+            { "root": "home", "path": ".codeium" }
+          ]
+        }
+      }
+    },
+    "cline": {
+      "label": "Cline",
+      "kind": "rule-file",
+      "scopes": {
+        "project": {
+          "root": "project",
+          "path": ".clinerules/clean-code-refactor.md",
+          "format": "plain",
+          "detect": [
+            { "root": "project", "path": ".clinerules" }
+          ]
+        }
+      }
+    },
+    "roo": {
+      "label": "Roo Code",
+      "kind": "rule-file",
+      "scopes": {
+        "project": {
+          "root": "project",
+          "path": ".roo/rules/clean-code-refactor.md",
+          "format": "plain",
+          "detect": [
+            { "root": "project", "path": ".roo" }
+          ]
+        }
+      }
+    },
+    "continue": {
+      "label": "Continue",
+      "kind": "rule-file",
+      "scopes": {
+        "project": {
+          "root": "project",
+          "path": ".continue/rules/clean-code-refactor.md",
+          "format": "continue",
+          "detect": [
+            { "root": "project", "path": ".continue" }
+          ]
+        }
+      }
+    },
+    "amazonq": {
+      "label": "Amazon Q Developer",
+      "kind": "rule-file",
+      "scopes": {
+        "project": {
+          "root": "project",
+          "path": ".amazonq/rules/clean-code-refactor.md",
+          "format": "plain",
+          "detect": [
+            { "root": "project", "path": ".amazonq" }
+          ]
+        }
+      }
+    },
+    "opencode": {
+      "label": "OpenCode",
+      "kind": "skill-folder",
+      "scopes": {
+        "project": {
+          "root": "project",
+          "path": ".opencode/skills/clean-code-refactor",
+          "detect": [
+            { "root": "project", "path": ".opencode" },
+            { "root": "xdg-config", "path": "opencode" }
+          ]
+        },
+        "user": {
+          "root": "xdg-config",
+          "path": "opencode/skills/clean-code-refactor",
+          "verification": "verify-against-docs",
+          "detect": [
+            { "root": "xdg-config", "path": "opencode" }
+          ]
+        }
+      }
+    },
+    "kilo": {
+      "label": "Kilo Code",
+      "kind": "rule-file",
+      "scopes": {
+        "project": {
+          "root": "project",
+          "path": ".kilo/rules/clean-code-refactor.md",
+          "format": "plain",
+          "config": { "file": "kilo.jsonc", "entry": ".kilo/rules/clean-code-refactor.md" },
+          "detect": [
+            { "root": "project", "path": ".kilo" },
+            { "root": "project", "path": "kilo.jsonc" }
+          ]
+        }
+      }
+    }
+  }
+}

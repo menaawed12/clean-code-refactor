@@ -1,225 +1,734 @@
+<#
+.SYNOPSIS
+    Installs the clean-code-refactor skill into editor/agent targets.
+
+.DESCRIPTION
+    Registry-driven, preflighted installer (see integrations/registry.json):
+      - One path transformation for rule files; every generated local link is validated (no double prefixes).
+      - Upgrades are receipt/hash-based: owned files are updated, stale owned files are removed,
+        unrelated files are preserved. User modifications are detected and not overwritten without -Force.
+      - Preflight containment: destinations must resolve inside their declared root and must not
+        traverse reparse points (symlinks/junctions). Preflight failures abort before any write.
+
+.PARAMETER Editor
+    Target id, or 'all' (every target for the scope), or 'detected'
+    (targets whose editor configuration directory already exists).
+
+.PARAMETER Scope
+    'project' (default) or 'user' (per-user global install where the registry declares it).
+
+.PARAMETER TargetPath
+    Project directory for project-scope targets.
+
+.PARAMETER CodexHome
+    Codex home directory (default $env:CODEX_HOME or ~/.codex).
+
+.PARAMETER UserHome
+    User home directory for user-scope targets (default $HOME). Override for tests/portable installs.
+
+.PARAMETER DryRun
+    Print the plan without writing anything. Alias: -WhatIf.
+
+.PARAMETER Force
+    Replace this skill's previously installed files, including user-modified owned files.
+
+.PARAMETER List
+    List registry targets and exit.
+
+.PARAMETER OutputFormat
+    'Text' (default) or 'Json' (machine-readable plan/result).
+
+.EXITCODES
+    0 = all requested targets installed/updated or intentionally skipped.
+    1 = one or more targets failed during execution.
+    2 = usage error, missing source, or preflight abort (nothing was written).
+#>
 [CmdletBinding()]
 param(
-    [ValidateSet(
-        'all',
-        'agents',
-        'cursor',
-        'copilot',
-        'claude',
-        'codex',
-        'windsurf',
-        'cline',
-        'roo',
-        'continue',
-        'amazonq',
-        'opencode',
-        'kilo'
-    )]
+    # Validated dynamically against the registry (comma lists arrive as a single
+    # string under powershell.exe -File, so a static ValidateSet would reject them).
     [string[]]$Editor = @('all'),
+
+    [ValidateSet('project', 'user')]
+    [string]$Scope = 'project',
 
     [string]$TargetPath = (Get-Location).Path,
 
-    [string]$CodexHome = $(
-        if ($env:CODEX_HOME) {
-            $env:CODEX_HOME
-        } else {
-            Join-Path $HOME '.codex'
-        }
-    ),
+    [string]$CodexHome = $( if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' } ),
 
-    [switch]$Force
+    [string]$UserHome = $HOME,
+
+    [Alias('WhatIf')]
+    [switch]$DryRun,
+
+    [switch]$Force,
+
+    [switch]$List,
+
+    [ValidateSet('Text', 'Json')]
+    [string]$OutputFormat = 'Text'
 )
 
 $ErrorActionPreference = 'Stop'
-$repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$skillSource = Join-Path $repositoryRoot 'SKILL.md'
-$referenceSource = Join-Path $repositoryRoot 'references'
-$profileSource = Join-Path $repositoryRoot 'scripts/profile-repository.ps1'
-$targetRoot = [System.IO.Path]::GetFullPath($TargetPath)
+$script:HadFailure = $false
+$isWindowsOs = ($env:OS -eq 'Windows_NT')
 
-foreach ($path in @($skillSource, $referenceSource, $profileSource)) {
-    if (-not (Test-Path -LiteralPath $path)) {
-        throw "Required source is missing: $path"
+function Get-Prop {
+    param($Object, [string]$Name)
+    if ($null -eq $Object) { return $null }
+    $property = $Object.PSObject.Properties[$Name]
+    if ($null -eq $property) { return $null }
+    return $property.Value
+}
+
+function Write-Info {
+    # Human-readable progress; suppressed in Json mode so stdout stays parseable.
+    param([string]$Message)
+    if ($OutputFormat -eq 'Text') { Write-Host $Message }
+}
+
+function Write-Notice {
+    # Human-readable warning; suppressed in Json mode so stdout stays parseable.
+    param([string]$Message)
+    if ($OutputFormat -eq 'Text') { Write-Warning $Message }
+}
+
+function Install-PointerFile {
+    param([string]$PointerPath, [string]$SkillLink)
+    $marker = '<!-- clean-code-refactor-skill -->'
+    $pointerText = "`n`n$marker`n## Clean Code Refactor`n`nFor refactoring, lint remediation, duplicate detection, code hardening, and code-quality reviews, load and follow ``$SkillLink``.`n<!-- /clean-code-refactor-skill -->`n"
+    if (-not (Test-Path -LiteralPath $PointerPath)) {
+        $parent = Split-Path -Parent $PointerPath
+        if (-not (Test-Path -LiteralPath $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
+        Set-Content -LiteralPath $PointerPath -Value $pointerText.TrimStart() -NoNewline
+        Write-Info "Created pointer: $PointerPath"
+    } elseif ((Get-Content -LiteralPath $PointerPath -Raw) -notmatch [regex]::Escape($marker)) {
+        Add-Content -LiteralPath $PointerPath -Value $pointerText
+        Write-Info "Appended pointer section: $PointerPath"
     }
 }
 
-if (-not (Test-Path -LiteralPath $targetRoot -PathType Container)) {
-    throw "Target project directory does not exist: $targetRoot"
+function Ensure-EditorConfig {
+    param([string]$ConfigPath, [string]$Entry)
+    if (-not (Test-Path -LiteralPath $ConfigPath)) {
+        $configText = "{`n  `"instructions`": [`n    `"$Entry`"`n  ]`n}`n"
+        Set-Content -LiteralPath $ConfigPath -Value $configText -NoNewline
+        Write-Info "Created configuration: $ConfigPath"
+    } elseif ((Get-Content -LiteralPath $ConfigPath -Raw) -notmatch [regex]::Escape($Entry)) {
+        Write-Notice "Add `"$Entry`" to the instructions array in $ConfigPath to enable this rule."
+    }
 }
 
-$skillText = Get-Content -LiteralPath $skillSource -Raw
-$skillBody = $skillText -replace '(?s)^---\r?\n.*?\r?\n---\r?\n?', ''
-$ruleBody = $skillBody.Replace(
-    'references/language-hardening.md',
-    'clean-code-refactor-references/language-hardening.md'
-)
-$ruleBody = $ruleBody.Replace(
-    'references/static-quality-rules.md',
-    'clean-code-refactor-references/static-quality-rules.md'
-)
-$ruleBody = $ruleBody.Replace(
-    'references/',
-    'clean-code-refactor-references/'
-)
-$ruleBody = $ruleBody.Replace(
-    'scripts/profile-repository.ps1',
-    'clean-code-refactor-tools/profile-repository.ps1'
-)
-
-function Test-ReplaceAllowed {
-    param([string]$Path)
-
-    if ((Test-Path -LiteralPath $Path) -and -not $Force) {
-        Write-Warning "Skipped existing path (use -Force to replace): $Path"
-        return $false
+function Use-AdditiveExtras {
+    # Pointer sections and config entries are additive and marked; re-check them even
+    # when the owned unit itself is already up to date (a user may have removed them).
+    param([string]$Kind, [string]$Root, $ScopeDef)
+    if ($DryRun) { return }
+    $pointer = Get-Prop $ScopeDef 'pointer'
+    if ($Kind -eq 'skill-folder' -and $null -ne $pointer) {
+        Install-PointerFile -PointerPath (Join-UnderRoot -Root $Root -RelativePath (Get-Prop $pointer 'file')) -SkillLink (Get-Prop $pointer 'skillLink')
     }
+    $config = Get-Prop $ScopeDef 'config'
+    if ($Kind -eq 'rule-file' -and $null -ne $config) {
+        Ensure-EditorConfig -ConfigPath (Join-UnderRoot -Root $Root -RelativePath (Get-Prop $config 'file')) -Entry (Get-Prop $config 'entry')
+    }
+}
+
+function Resolve-FullDirectoryPath {
+    param([string]$PathValue)
+    return [System.IO.Path]::GetFullPath($PathValue).TrimEnd('\', '/')
+}
+
+function Join-UnderRoot {
+    param([string]$Root, [string]$RelativePath)
+    $segments = $RelativePath -split '[\\/]+' | Where-Object { $_ -and $_ -ne '.' }
+    if ($segments -contains '..') { throw "Registry path must not contain '..': $RelativePath" }
+    $current = $Root
+    foreach ($segment in $segments) { $current = Join-Path $current $segment }
+    return $current
+}
+
+function Test-PathUnderRoot {
+    param([string]$Candidate, [string]$Root)
+    $prefix = $Root.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
+    $comparison = if ($isWindowsOs) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
+    return $Candidate.StartsWith($prefix, $comparison) -and $Candidate.Length -gt $prefix.Length
+}
+
+function Get-ReparseViolation {
+    # Returns the first path component between root and destination that is a reparse point, or $null.
+    param([string]$Destination, [string]$Root)
+    if (-not (Test-PathUnderRoot -Candidate $Destination -Root $Root)) { return $Destination }
+    $relative = $Destination.Substring($Root.Length).TrimStart('\', '/')
+    $segments = $relative -split '[\\/]+' | Where-Object { $_ }
+    $current = $Root
+    foreach ($segment in $segments) {
+        $current = Join-Path $current $segment
+        if (Test-Path -LiteralPath $current) {
+            $item = Get-Item -LiteralPath $current -Force
+            if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { return $current }
+        }
+    }
+    return $null
+}
+
+function Get-FileSha256 {
+    param([string]$PathValue)
+    return (Get-FileHash -LiteralPath $PathValue -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+
+function Get-DirectoryFileMap {
+    # Relative path (slash-separated) -> sha256, for every file under a directory.
+    param([string]$Directory)
+    $map = @{}
+    if (-not (Test-Path -LiteralPath $Directory -PathType Container)) { return $map }
+    foreach ($file in (Get-ChildItem -LiteralPath $Directory -Recurse -File -Force)) {
+        $relative = $file.FullName.Substring($Directory.Length).TrimStart('\', '/').Replace('\', '/')
+        $map[$relative] = Get-FileSha256 -PathValue $file.FullName
+    }
+    return $map
+}
+
+function Get-SourceFileMap {
+    # Canonical owned files: [relative path] -> sha256, computed from the package sources.
+    param($Package, [string]$SkillSource, [string]$ReferenceDir, [string]$ProfilerSource)
+    $map = @{}
+    $map[(Get-Prop $Package 'canonicalSkillFile')] = Get-FileSha256 -PathValue $SkillSource
+    foreach ($entry in (Get-DirectoryFileMap -Directory $ReferenceDir).GetEnumerator()) {
+        $map["$((Get-Prop $Package 'referenceDir'))/$($entry.Key)"] = $entry.Value
+    }
+    $map[(Get-Prop $Package 'profilerSource')] = Get-FileSha256 -PathValue $ProfilerSource
+    return $map
+}
+
+function New-ReceiptObject {
+    param([string]$Version, [string]$EditorId, [string]$ScopeName, [string]$Kind, $Files)
+    return [ordered]@{
+        package     = 'clean-code-refactor'
+        version     = $Version
+        installedAt = (Get-Date).ToUniversalTime().ToString('o')
+        editor      = $EditorId
+        scope       = $ScopeName
+        kind        = $Kind
+        files       = $Files
+    }
+}
+
+function Write-FileIfChanged {
+    param([string]$Destination, [string]$Content)
+    if ((Test-Path -LiteralPath $Destination) -and ((Get-Content -LiteralPath $Destination -Raw) -eq $Content)) { return $false }
+    $parent = Split-Path -Parent $Destination
+    if (-not (Test-Path -LiteralPath $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
+    # -NoNewline writes the exact bytes (LF endings preserved); no CRLF translation.
+    Set-Content -LiteralPath $Destination -Value $Content -NoNewline
     return $true
 }
 
-function Copy-SkillFolder {
-    param([string]$Destination)
-
-    if (-not (Test-ReplaceAllowed $Destination)) {
-        return
+function Copy-FileVerified {
+    param([string]$Source, [string]$Destination)
+    $parent = Split-Path -Parent $Destination
+    if (-not (Test-Path -LiteralPath $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
+    Copy-Item -LiteralPath $Source -Destination $Destination -Force
+    if ((Get-FileSha256 -PathValue $Source) -ne (Get-FileSha256 -PathValue $Destination)) {
+        throw "Post-copy verification failed for $Destination"
     }
-    New-Item -ItemType Directory -Path $Destination -Force | Out-Null
-    Copy-Item -LiteralPath $skillSource -Destination (Join-Path $Destination 'SKILL.md') -Force
-    Copy-Item -LiteralPath $referenceSource -Destination (Join-Path $Destination 'references') -Recurse -Force
-    New-Item -ItemType Directory -Path (Join-Path $Destination 'scripts') -Force | Out-Null
-    Copy-Item -LiteralPath $profileSource -Destination (Join-Path $Destination 'scripts/profile-repository.ps1') -Force
-    Write-Host "Installed skill folder: $Destination"
 }
 
-function Install-RuleFile {
-    param(
-        [string]$Destination,
-        [ValidateSet('plain', 'cursor', 'continue')][string]$Format = 'plain'
-    )
+function Sync-MirroredDirectory {
+    <#
+        Mirror a source directory into an owned destination directory:
+        copy new/changed files, remove stale owned files (files inside the owned
+        references directory that the package no longer ships). Unrelated files
+        OUTSIDE owned paths are never touched. Per-file writes mean an
+        interrupted run leaves previous content for not-yet-written files.
+        Returns a hashtable with Copied / Removed / Failed.
+    #>
+    param([string]$Source, [string]$Destination, [switch]$DryRun)
+    $result = @{ Copied = 0; Removed = 0; Failed = $false }
+    $sourceMap = Get-DirectoryFileMap -Directory $Source
+    $destinationMap = Get-DirectoryFileMap -Directory $Destination
 
-    if (-not (Test-ReplaceAllowed $Destination)) {
-        return
+    if ($DryRun) {
+        foreach ($relative in $sourceMap.Keys) {
+            if (-not $destinationMap.ContainsKey($relative) -or $destinationMap[$relative] -ne $sourceMap[$relative]) { $result.Copied++ }
+        }
+        foreach ($relative in $destinationMap.Keys) {
+            if (-not $sourceMap.ContainsKey($relative)) { $result.Removed++ }
+        }
+        return $result
     }
-    $parent = Split-Path -Parent $Destination
-    $referenceDestination = Join-Path $parent 'clean-code-refactor-references'
-    $toolDestination = Join-Path $parent 'clean-code-refactor-tools'
-    if ((Test-Path -LiteralPath $referenceDestination) -and -not $Force) {
-        Write-Warning "Skipped rule because its reference directory already exists (use -Force to replace): $referenceDestination"
-        return
+
+    if (-not (Test-Path -LiteralPath $Destination)) {
+        New-Item -ItemType Directory -Path $Destination -Force | Out-Null
     }
-    if ((Test-Path -LiteralPath $toolDestination) -and -not $Force) {
-        Write-Warning "Skipped rule because its tool directory already exists (use -Force to replace): $toolDestination"
-        return
+    foreach ($relative in ($sourceMap.Keys | Sort-Object)) {
+        try {
+            $target = Join-Path $Destination ($relative.Replace('/', [System.IO.Path]::DirectorySeparatorChar))
+            $sourceFile = Join-Path $Source ($relative.Replace('/', [System.IO.Path]::DirectorySeparatorChar))
+            if (-not $destinationMap.ContainsKey($relative) -or $destinationMap[$relative] -ne $sourceMap[$relative]) {
+                Copy-FileVerified -Source $sourceFile -Destination $target
+                $result.Copied++
+            }
+        } catch {
+            Write-Warning "Failed to sync reference file '$relative': $($_.Exception.Message)"
+            $result.Failed = $true
+        }
     }
-    New-Item -ItemType Directory -Path $parent -Force | Out-Null
-    $content = $ruleBody
+    foreach ($relative in ($destinationMap.Keys | Sort-Object)) {
+        if (-not $sourceMap.ContainsKey($relative)) {
+            $target = Join-Path $Destination ($relative.Replace('/', [System.IO.Path]::DirectorySeparatorChar))
+            try {
+                Remove-Item -LiteralPath $target -Force
+                $result.Removed++
+            } catch {
+                Write-Warning "Failed to remove stale file '$relative': $($_.Exception.Message)"
+                $result.Failed = $true
+            }
+        }
+    }
+    if (-not $DryRun) {
+        # Prune directories that became empty after stale-file removal (deepest first).
+        $directories = @(Get-ChildItem -LiteralPath $Destination -Recurse -Directory -Force | Sort-Object { $_.FullName.Length } -Descending)
+        foreach ($directory in $directories) {
+            if (@(Get-ChildItem -LiteralPath $directory.FullName -Force -ErrorAction SilentlyContinue).Count -eq 0) {
+                try { Remove-Item -LiteralPath $directory.FullName -Force } catch { }
+            }
+        }
+    }
+    return $result
+}
+
+function Get-RuleBody {
+    <#
+        Single-pass transformation of the canonical skill body (fixes the double-prefix bug):
+        'references/' is rewritten exactly once, then the profiler path. Generated local links
+        are validated against the package sources before anything is written.
+    #>
+    param($Registry, [string]$SkillText, [string]$ReferenceDir, [string]$ProfilerSource)
+    $layout = Get-Prop $Registry 'ruleFileLayout'
+    $referencesDirName = Get-Prop $layout 'referencesDirName'
+    $toolsDirName = Get-Prop $layout 'toolsDirName'
+    $profilerFileName = Get-Prop $layout 'profilerFileName'
+
+    $body = $SkillText -replace '(?s)^---\r?\n.*?\r?\n---\r?\n?', ''
+    $body = $body.Replace('references/', "$referencesDirName/")
+    $body = $body.Replace('scripts/profile-repository.ps1', "$toolsDirName/$profilerFileName")
+
+    # Validate every generated local link resolves to a real package file.
+    foreach ($match in [regex]::Matches($body, [regex]::Escape("$referencesDirName/") + '([A-Za-z0-9][A-Za-z0-9._/-]*)')) {
+        $candidate = Join-Path $ReferenceDir ($match.Groups[1].Value.Replace('/', [System.IO.Path]::DirectorySeparatorChar))
+        if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+            throw "Generated rule references missing package file: $referencesDirName/$($match.Groups[1].Value)"
+        }
+    }
+    $toolLink = "$toolsDirName/$profilerFileName"
+    if ($body.Contains($toolLink) -and -not (Test-Path -LiteralPath $ProfilerSource -PathType Leaf)) {
+        throw "Generated rule references missing package file: $toolLink"
+    }
+    return $body
+}
+
+function Get-FormattedRuleContent {
+    param([string]$Body, [string]$Format, [string]$Version, [string]$ReferencesDirName)
+    $marker = "<!-- clean-code-refactor $Version; generated by the package installer; edits here are overwritten on upgrade -->"
     switch ($Format) {
         'cursor' {
-            $content = "---`n" +
+            return "---`n" +
                 "description: Apply clean-code refactoring, hardening, lint remediation, and duplicate detection.`n" +
                 "globs:`n" +
                 "alwaysApply: false`n" +
                 "---`n`n" +
-                $ruleBody +
-                "`n`n@clean-code-refactor-references/language-hardening.md`n" +
-                "@clean-code-refactor-references/static-quality-rules.md`n"
+                "$marker`n`n" +
+                $Body +
+                "`n`n@$ReferencesDirName/language-hardening.md`n" +
+                "@$ReferencesDirName/static-quality-rules.md`n"
         }
         'continue' {
-            $content = "---`n" +
+            return "---`n" +
                 "name: Clean Code Refactor`n" +
                 "description: Refactor, review, and harden changed code.`n" +
                 "alwaysApply: false`n" +
                 "---`n`n" +
-                $ruleBody
+                "$marker`n`n" +
+                $Body
+        }
+        'plain' {
+            return "$marker`n`n" + $Body
+        }
+        default { throw "Unsupported rule format: $Format" }
+    }
+}
+
+function Get-Receipt {
+    param([string]$ReceiptPath)
+    if (-not (Test-Path -LiteralPath $ReceiptPath -PathType Leaf)) { return $null }
+    try { return Get-Content -LiteralPath $ReceiptPath -Raw | ConvertFrom-Json } catch { return $null }
+}
+
+function Test-UnitUserModified {
+    # True when a receipt exists but an owned file's current hash no longer matches it.
+    param($Receipt)
+    if ($null -eq $Receipt) { return $false }
+    $recorded = Get-Prop $Receipt 'files'
+    if ($null -eq $recorded) { return $false }
+    foreach ($entry in $recorded.PSObject.Properties) {
+        $fullPath = Join-UnderRoot -Root $script:UnitBase -RelativePath $entry.Name
+        if (-not (Test-Path -LiteralPath $fullPath -PathType Leaf)) { return $true }
+        if ((Get-FileSha256 -PathValue $fullPath) -ne ([string]$entry.Value)) { return $true }
+    }
+    return $false
+}
+
+function Test-UnitUpToDate {
+    # True when the receipt version matches and every source file matches its recorded hash.
+    param($Receipt, [string]$Version, $SourceMap)
+    if ($null -eq $Receipt) { return $false }
+    if ((Get-Prop $Receipt 'version') -ne $Version) { return $false }
+    if ($null -eq (Get-Prop $Receipt 'files')) { return $false }
+    foreach ($entry in $SourceMap.GetEnumerator()) {
+        $fullPath = Join-UnderRoot -Root $script:UnitBase -RelativePath $entry.Key
+        if (-not (Test-Path -LiteralPath $fullPath -PathType Leaf)) { return $false }
+        if ((Get-FileSha256 -PathValue $fullPath) -ne $entry.Value) { return $false }
+    }
+    return $true
+}
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+try {
+    $repositoryRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
+    $registryPath = Join-Path $repositoryRoot 'integrations/registry.json'
+    if (-not (Test-Path -LiteralPath $registryPath -PathType Leaf)) { throw "Editor registry is missing: $registryPath" }
+    $registry = Get-Content -LiteralPath $registryPath -Raw | ConvertFrom-Json
+    $package = Get-Prop $registry 'package'
+    $layout = Get-Prop $registry 'ruleFileLayout'
+    $version = Get-Prop $package 'version'
+
+    $skillSource = Join-Path $repositoryRoot (Get-Prop $package 'canonicalSkillFile')
+    $referenceSource = Join-Path $repositoryRoot (Get-Prop $package 'referenceDir')
+    $profilerSource = Join-Path $repositoryRoot (Get-Prop $package 'profilerSource')
+    foreach ($path in @($skillSource, $referenceSource, $profilerSource)) {
+        if (-not (Test-Path -LiteralPath $path)) { throw "Required source is missing: $path" }
+    }
+
+    $editorIds = @((Get-Prop $registry 'editors').PSObject.Properties.Name | Sort-Object)
+
+    if ($List) {
+        if ($OutputFormat -eq 'Json') {
+            $registry | ConvertTo-Json -Depth 8
+        } else {
+            Write-Output "Registered targets (package version $version):"
+            foreach ($id in $editorIds) {
+                $definition = Get-Prop (Get-Prop $registry 'editors') $id
+                foreach ($scopeName in @('project', 'user')) {
+                    $scopeDef = Get-Prop (Get-Prop $definition 'scopes') $scopeName
+                    if ($null -eq $scopeDef) { continue }
+                    $verification = Get-Prop $scopeDef 'verification'
+                    $suffix = if ($verification) { " [$verification]" } else { '' }
+                    Write-Output ("  {0,-10} {1,-7} {2,-12} {3}{4}" -f $id, $scopeName, (Get-Prop $definition 'kind'), (Get-Prop $scopeDef 'path'), $suffix)
+                }
+            }
+        }
+        exit 0
+    }
+
+    if ($Scope -eq 'project') {
+        if (-not (Test-Path -LiteralPath $TargetPath -PathType Container)) { throw "Target project directory does not exist: $TargetPath" }
+        $projectRoot = Resolve-FullDirectoryPath -PathValue (Resolve-Path -LiteralPath $TargetPath).Path
+    } else {
+        $projectRoot = $null
+    }
+
+    $roots = @{
+        'project'    = $projectRoot
+        'codex-home' = Resolve-FullDirectoryPath -PathValue $CodexHome
+        'home'       = Resolve-FullDirectoryPath -PathValue $UserHome
+        'xdg-config' = Resolve-FullDirectoryPath -PathValue $( if ($env:XDG_CONFIG_HOME) { $env:XDG_CONFIG_HOME } else { Join-Path $UserHome '.config' } )
+    }
+
+    # Resolve requested editor ids.
+    $requested = @()
+    foreach ($item in $Editor) {
+        $requested += ($item -split '[,;\s]+' | Where-Object { $_ })
+    }
+    $requested = @($requested | Select-Object -Unique)
+    if (($requested -contains 'all') -and ($requested.Count -gt 1)) { throw "Cannot combine 'all' with other editor selections." }
+    if (($requested -contains 'detected') -and $requested.Count -gt 1) { throw "Cannot combine 'detected' with other editor selections." }
+
+    if ($requested -contains 'all') {
+        $selected = $editorIds
+    } elseif ($requested -contains 'detected') {
+        $selected = @()
+        foreach ($id in $editorIds) {
+            $definition = Get-Prop (Get-Prop $registry 'editors') $id
+            $scopeDef = Get-Prop (Get-Prop $definition 'scopes') $Scope
+            if ($null -eq $scopeDef) { continue }
+            $rootPath = $roots[(Get-Prop $scopeDef 'root')]
+            $destination = Join-UnderRoot -Root $rootPath -RelativePath (Get-Prop $scopeDef 'path')
+            $matched = (Test-Path -LiteralPath $destination)
+            if (-not $matched) {
+                foreach ($hint in @(Get-Prop $scopeDef 'detect')) {
+                    if ($null -eq $hint) { continue }
+                    $hintRoot = $roots[(Get-Prop $hint 'root')]
+                    if ($null -ne $hintRoot -and (Test-Path -LiteralPath (Join-UnderRoot -Root $hintRoot -RelativePath (Get-Prop $hint 'path')))) { $matched = $true; break }
+                }
+            }
+            if ($matched) { $selected += $id }
+        }
+        if ($selected.Count -eq 0) {
+            Write-Output "No installed editors detected for scope '$Scope'. Nothing to do."
+            exit 0
+        }
+    } else {
+        foreach ($id in $requested) {
+            if ($editorIds -notcontains $id) { throw "Unknown editor target: '$id'. Known targets: $($editorIds -join ', ')" }
+        }
+        $selected = $requested
+    }
+
+    $skillText = Get-Content -LiteralPath $skillSource -Raw
+    $sourceMap = Get-SourceFileMap -Package $package -SkillSource $skillSource -ReferenceDir $referenceSource -ProfilerSource $profilerSource
+    $referencesDirName = Get-Prop $layout 'referencesDirName'
+    $toolsDirName = Get-Prop $layout 'toolsDirName'
+    $profilerFileName = Get-Prop $layout 'profilerFileName'
+    $receiptFileName = Get-Prop $package 'receiptFileName'
+
+    # ------------------------------- Plan ---------------------------------
+    $plan = @()
+    foreach ($id in $selected) {
+        $definition = Get-Prop (Get-Prop $registry 'editors') $id
+        $scopeDef = Get-Prop (Get-Prop $definition 'scopes') $Scope
+        if ($null -eq $scopeDef) {
+            $plan += [pscustomobject]@{ Editor = $id; Scope = $Scope; Kind = $null; Destination = $null; UnitBase = $null; ReceiptPath = $null; Status = 'skipped'; Reason = "scope '$Scope' is not declared for this editor (see docs/ide-compatibility.md)"; Verification = $null; ScopeDef = $null }
+            continue
+        }
+
+        $rootPath = $roots[(Get-Prop $scopeDef 'root')]
+        if ($null -eq $rootPath) {
+            $plan += [pscustomobject]@{ Editor = $id; Scope = $Scope; Kind = $null; Destination = $null; UnitBase = $null; ReceiptPath = $null; Status = 'failed'; Reason = "root '$(Get-Prop $scopeDef 'root')' is unavailable"; Verification = $null; ScopeDef = $null }
+            $script:HadFailure = $true
+            continue
+        }
+        $kind = Get-Prop $scopeDef 'kind'
+        if (-not $kind) { $kind = Get-Prop $definition 'kind' }
+        $destination = Join-UnderRoot -Root $rootPath -RelativePath (Get-Prop $scopeDef 'path')
+
+        # Containment and reparse-point preflight (no write may escape the declared root).
+        if (-not (Test-PathUnderRoot -Candidate $destination -Root $rootPath)) {
+            $plan += [pscustomobject]@{ Editor = $id; Scope = $Scope; Kind = $kind; Destination = $destination; UnitBase = $null; ReceiptPath = $null; Status = 'failed'; Reason = "destination escapes its root: $destination"; Verification = $null; ScopeDef = $scopeDef }
+            $script:HadFailure = $true
+            continue
+        }
+        $reparse = Get-ReparseViolation -Destination $destination -Root $rootPath
+        if ($null -ne $reparse) {
+            $plan += [pscustomobject]@{ Editor = $id; Scope = $Scope; Kind = $kind; Destination = $destination; UnitBase = $null; ReceiptPath = $null; Status = 'failed'; Reason = "refusing to traverse reparse point: $reparse"; Verification = $null; ScopeDef = $scopeDef }
+            $script:HadFailure = $true
+            continue
+        }
+
+        $verification = Get-Prop $scopeDef 'verification'
+        $unitBase = if ($kind -eq 'rule-file') { Split-Path -Parent $destination } else { $destination }
+        $script:UnitBase = $unitBase
+        $receiptPath = if ($kind -eq 'rule-file') {
+            Join-UnderRoot -Root $unitBase -RelativePath "$toolsDirName/$receiptFileName"
+        } else {
+            Join-UnderRoot -Root $unitBase -RelativePath $receiptFileName
+        }
+
+        $unitExists = if ($kind -eq 'rule-file') {
+            (Test-Path -LiteralPath $destination -PathType Leaf)
+        } else {
+            (Test-Path -LiteralPath $destination -PathType Container)
+        }
+        $receipt = Get-Receipt -ReceiptPath $receiptPath
+
+        $status = $null; $reason = $null
+        if (-not $unitExists) {
+            $status = 'install'
+        } elseif ($null -eq $receipt) {
+            if ($Force) { $status = 'update'; $reason = 'existing unmanaged install; replacing because -Force was given' }
+            else { $status = 'skipped'; $reason = 'existing install has no package receipt (unmanaged); use -Force to replace' }
+        } elseif (Test-UnitUserModified -Receipt $receipt) {
+            if ($Force) { $status = 'update'; $reason = 'user modifications detected; replacing because -Force was given' }
+            else { $status = 'skipped'; $reason = 'user modifications detected; use -Force to overwrite' }
+        } elseif (Test-UnitUpToDate -Receipt $receipt -Version $version -SourceMap $sourceMap) {
+            $status = 'up-to-date'
+        } else {
+            $status = 'update'
+            $receiptVersion = Get-Prop $receipt 'version'
+            if ($receiptVersion -and $receiptVersion -ne $version) { $reason = "upgrading receipt version $receiptVersion -> $version" }
+        }
+
+        $plan += [pscustomobject]@{
+            Editor = $id; Scope = $Scope; Kind = $kind; Destination = $destination; UnitBase = $unitBase
+            ReceiptPath = $receiptPath; Status = $status; Reason = $reason; Verification = $verification
+            ScopeDef = $scopeDef
         }
     }
-    Set-Content -LiteralPath $Destination -Value $content -NoNewline
-    Copy-Item -LiteralPath $referenceSource -Destination $referenceDestination -Recurse -Force
-    New-Item -ItemType Directory -Path $toolDestination -Force | Out-Null
-    Copy-Item -LiteralPath $profileSource -Destination (Join-Path $toolDestination 'profile-repository.ps1') -Force
-    Write-Host "Installed rule: $Destination"
-}
 
-function Install-AgentPointer {
-    $skillDestination = Join-Path $targetRoot '.agents/skills/clean-code-refactor'
-    Copy-SkillFolder $skillDestination
-
-    $agentsPath = Join-Path $targetRoot 'AGENTS.md'
-    $marker = '<!-- clean-code-refactor-skill -->'
-    $pointer = @"
-
-$marker
-## Clean Code Refactor
-
-For refactoring, lint remediation, duplicate detection, code hardening, and code-quality reviews, load and follow `.agents/skills/clean-code-refactor/SKILL.md`.
-<!-- /clean-code-refactor-skill -->
-"@
-    if (-not (Test-Path -LiteralPath $agentsPath)) {
-        Set-Content -LiteralPath $agentsPath -Value ($pointer.TrimStart()) -NoNewline
-        Write-Host "Created agent pointer: $agentsPath"
-    } elseif ((Get-Content -LiteralPath $agentsPath -Raw) -notmatch [regex]::Escape($marker)) {
-        Add-Content -LiteralPath $agentsPath -Value $pointer
-        Write-Host "Added agent pointer: $agentsPath"
+    $blocked = @($plan | Where-Object { $_.Status -eq 'failed' })
+    if ($blocked.Count -gt 0 -and -not $DryRun) {
+        # Preflight failures abort the whole run: no partial installation.
+        foreach ($item in $blocked) { Write-Notice "Preflight failed for $($item.Editor): $($item.Reason)" }
+        throw 'Preflight failed for one or more targets; nothing was written.'
     }
-}
 
-function Install-CopilotPointer {
-    $instructionsPath = Join-Path $targetRoot '.github/copilot-instructions.md'
-    $marker = '<!-- clean-code-refactor-skill -->'
-    $pointer = @"
-
-$marker
-## Clean Code Refactor
-
-For refactoring, lint remediation, duplicate detection, code hardening, and code-quality reviews, load and follow `.github/skills/clean-code-refactor/SKILL.md`.
-<!-- /clean-code-refactor-skill -->
-"@
-    if (-not (Test-Path -LiteralPath $instructionsPath)) {
-        New-Item -ItemType Directory -Path (Split-Path -Parent $instructionsPath) -Force | Out-Null
-        Set-Content -LiteralPath $instructionsPath -Value ($pointer.TrimStart()) -NoNewline
-        Write-Host "Created Copilot pointer: $instructionsPath"
-    } elseif ((Get-Content -LiteralPath $instructionsPath -Raw) -notmatch [regex]::Escape($marker)) {
-        Add-Content -LiteralPath $instructionsPath -Value $pointer
-        Write-Host "Added Copilot pointer: $instructionsPath"
-    }
-}
-
-function Install-KiloRule {
-    $rulePath = Join-Path $targetRoot '.kilo/rules/clean-code-refactor.md'
-    Install-RuleFile $rulePath
-
-    $configPath = Join-Path $targetRoot 'kilo.jsonc'
-    $ruleReference = '.kilo/rules/clean-code-refactor.md'
-    if (-not (Test-Path -LiteralPath $configPath)) {
-        $config = "{`n  `"instructions`": [`n    `"$ruleReference`"`n  ]`n}`n"
-        Set-Content -LiteralPath $configPath -Value $config -NoNewline
-        Write-Host "Created Kilo Code configuration: $configPath"
-    } elseif ((Get-Content -LiteralPath $configPath -Raw) -notmatch [regex]::Escape($ruleReference)) {
-        Write-Warning "Add `"$ruleReference`" to the instructions array in $configPath to enable the Kilo Code rule."
-    }
-}
-
-$requestedEditors = if ($Editor -contains 'all') {
-    @('agents', 'cursor', 'copilot', 'claude', 'windsurf', 'cline', 'roo', 'continue', 'amazonq', 'opencode', 'kilo')
-} else {
-    $Editor
-}
-
-foreach ($selectedEditor in $requestedEditors | Select-Object -Unique) {
-    switch ($selectedEditor) {
-        'agents' { Install-AgentPointer }
-        'cursor' { Install-RuleFile (Join-Path $targetRoot '.cursor/rules/clean-code-refactor.mdc') 'cursor' }
-        'copilot' {
-            Copy-SkillFolder (Join-Path $targetRoot '.github/skills/clean-code-refactor')
-            Install-CopilotPointer
+    # ----------------------------- Execute --------------------------------
+    $results = @()
+    foreach ($item in $plan) {
+        if ($item.Status -in @('skipped', 'failed')) {
+            $results += [pscustomobject]@{
+                editor = $item.Editor; scope = $item.Scope; status = $item.Status
+                destination = $item.Destination; reason = $item.Reason
+                filesWritten = 0; filesRemoved = 0
+            }
+            continue
         }
-        'claude' { Copy-SkillFolder (Join-Path $targetRoot '.claude/skills/clean-code-refactor') }
-        'codex' { Copy-SkillFolder (Join-Path $CodexHome 'skills/clean-code-refactor') }
-        'windsurf' { Install-RuleFile (Join-Path $targetRoot '.windsurf/rules/clean-code-refactor.md') }
-        'cline' { Install-RuleFile (Join-Path $targetRoot '.clinerules/clean-code-refactor.md') }
-        'roo' { Install-RuleFile (Join-Path $targetRoot '.roo/rules/clean-code-refactor.md') }
-        'continue' { Install-RuleFile (Join-Path $targetRoot '.continue/rules/clean-code-refactor.md') 'continue' }
-        'amazonq' { Install-RuleFile (Join-Path $targetRoot '.amazonq/rules/clean-code-refactor.md') }
-        'opencode' { Copy-SkillFolder (Join-Path $targetRoot '.opencode/skills/clean-code-refactor') }
-        'kilo' { Install-KiloRule }
+
+        if ($item.Status -eq 'up-to-date') {
+            # Owned files already match the package; still re-check additive pointer/config extras.
+            $upToDateRoot = $roots[(Get-Prop $item.ScopeDef 'root')]
+            Use-AdditiveExtras -Kind $item.Kind -Root $upToDateRoot -ScopeDef $item.ScopeDef
+            $results += [pscustomobject]@{
+                editor = $item.Editor; scope = $item.Scope; status = $item.Status
+                destination = $item.Destination; reason = $item.Reason
+                filesWritten = 0; filesRemoved = 0
+            }
+            continue
+        }
+
+        $scopeDef = $item.ScopeDef
+        $kind = $item.Kind
+        $destination = $item.Destination
+        $unitBase = $item.UnitBase
+        $filesWritten = 0
+        $filesRemoved = 0
+        $referenceResult = $null
+        $rootPath = $roots[(Get-Prop $scopeDef 'root')]
+
+        try {
+            if ($kind -eq 'skill-folder') {
+                # --- canonical folder: SKILL.md, references/ (mirrored), scripts/profiler ---
+                $skillDestination = Join-UnderRoot -Root $unitBase -RelativePath (Get-Prop $package 'canonicalSkillFile')
+                if (-not $DryRun) {
+                    if (Write-FileIfChanged -Destination $skillDestination -Content $skillText) { $filesWritten++ }
+                }
+                $referenceDestination = Join-UnderRoot -Root $unitBase -RelativePath (Get-Prop $package 'referenceDir')
+                $referenceResult = Sync-MirroredDirectory -Source $referenceSource -Destination $referenceDestination -DryRun:$DryRun
+                if ($referenceResult.Failed) { throw "reference sync failed for $referenceDestination" }
+                $filesWritten += $referenceResult.Copied
+                $filesRemoved += $referenceResult.Removed
+
+                $profilerDestination = Join-UnderRoot -Root $unitBase -RelativePath (Get-Prop $package 'profilerSource')
+                if (-not $DryRun) { Copy-FileVerified -Source $profilerSource -Destination $profilerDestination }
+                $filesWritten++
+            } else {
+                # --- rule file + mirrored references + profiler tool ---
+                $format = Get-Prop $scopeDef 'format'
+                if (-not $format) { $format = 'plain' }
+                $body = Get-RuleBody -Registry $registry -SkillText $skillText -ReferenceDir $referenceSource -ProfilerSource $profilerSource
+                $content = Get-FormattedRuleContent -Body $body -Format $format -Version $version -ReferencesDirName $referencesDirName
+
+                if (-not $DryRun) {
+                    if (Write-FileIfChanged -Destination $destination -Content $content) { $filesWritten++ }
+                }
+
+                $referenceDestination = Join-UnderRoot -Root $unitBase -RelativePath $referencesDirName
+                $referenceResult = Sync-MirroredDirectory -Source $referenceSource -Destination $referenceDestination -DryRun:$DryRun
+                if ($referenceResult.Failed) { throw "reference sync failed for $referenceDestination" }
+                $filesWritten += $referenceResult.Copied
+                $filesRemoved += $referenceResult.Removed
+
+                $toolDestination = Join-UnderRoot -Root $unitBase -RelativePath "$toolsDirName/$profilerFileName"
+                if (-not $DryRun) { Copy-FileVerified -Source $profilerSource -Destination $toolDestination }
+                $filesWritten++
+            }
+
+            # Additive, marked extras (pointer sections, config entries).
+            Use-AdditiveExtras -Kind $kind -Root $rootPath -ScopeDef $scopeDef
+
+            # ----------------------------- Receipt ----------------------------
+            if (-not $DryRun) {
+                $ownedFiles = [ordered]@{}
+                if ($kind -eq 'skill-folder') {
+                    $ownedFiles[(Get-Prop $package 'canonicalSkillFile')] = $sourceMap[(Get-Prop $package 'canonicalSkillFile')]
+                    $ownedFiles[(Get-Prop $package 'profilerSource')] = $sourceMap[(Get-Prop $package 'profilerSource')]
+                    foreach ($entry in (Get-DirectoryFileMap -Directory (Join-UnderRoot -Root $unitBase -RelativePath (Get-Prop $package 'referenceDir'))).GetEnumerator()) {
+                        $ownedFiles["$((Get-Prop $package 'referenceDir'))/$($entry.Key)"] = $entry.Value
+                    }
+                } else {
+                    $ownedFiles[(Split-Path -Leaf $destination)] = Get-FileSha256 -PathValue $destination
+                    $ownedFiles["$toolsDirName/$profilerFileName"] = $sourceMap[(Get-Prop $package 'profilerSource')]
+                    foreach ($entry in (Get-DirectoryFileMap -Directory (Join-UnderRoot -Root $unitBase -RelativePath $referencesDirName)).GetEnumerator()) {
+                        $ownedFiles["$referencesDirName/$($entry.Key)"] = $entry.Value
+                    }
+                }
+                $receiptObject = New-ReceiptObject -Version $version -EditorId $item.Editor -ScopeName $Scope -Kind $kind -Files $ownedFiles
+                $receiptTarget = $item.ReceiptPath
+                $receiptParent = Split-Path -Parent $receiptTarget
+                if (-not (Test-Path -LiteralPath $receiptParent)) { New-Item -ItemType Directory -Path $receiptParent -Force | Out-Null }
+                $receiptText = (($receiptObject | ConvertTo-Json -Depth 6) -replace "`r`n", "`n") + "`n"
+                Set-Content -LiteralPath $receiptTarget -Value $receiptText -NoNewline
+            }
+
+            $finalStatus = if ($item.Status -eq 'install') { 'installed' } else { 'updated' }
+            $results += [pscustomobject]@{
+                editor = $item.Editor; scope = $Scope; status = $finalStatus
+                destination = $destination; reason = $item.Reason
+                filesWritten = $filesWritten; filesRemoved = $filesRemoved
+            }
+            if ($item.Verification) {
+                Write-Notice "Target '$($item.Editor)' user scope is marked '$($item.Verification)': confirm the destination against your installed editor's documentation."
+            }
+        } catch {
+            $script:HadFailure = $true
+            $results += [pscustomobject]@{
+                editor = $item.Editor; scope = $Scope; status = 'failed'
+                destination = $destination; reason = $_.Exception.Message
+                filesWritten = $filesWritten; filesRemoved = $filesRemoved
+            }
+        }
     }
+
+    $summary = [ordered]@{
+        installed = @($results | Where-Object { $_.status -eq 'installed' }).Count
+        updated   = @($results | Where-Object { $_.status -eq 'updated' }).Count
+        upToDate  = @($results | Where-Object { $_.status -eq 'up-to-date' }).Count
+        skipped   = @($results | Where-Object { $_.status -eq 'skipped' }).Count
+        failed    = @($results | Where-Object { $_.status -eq 'failed' }).Count
+    }
+
+    if ($OutputFormat -eq 'Json') {
+        [ordered]@{
+            package = $version
+            scope = $Scope
+            dryRun = [bool]$DryRun
+            results = $results
+            summary = $summary
+        } | ConvertTo-Json -Depth 6
+    } else {
+        foreach ($result in $results) {
+            $line = "[$($result.status)] $($result.editor) ($($result.scope)) -> $($result.destination)"
+            if ($result.reason) { $line += " - $($result.reason)" }
+            if ($result.filesWritten -gt 0) { $line += " [files written: $($result.filesWritten)]" }
+            if ($result.filesRemoved -gt 0) { $line += " [stale removed: $($result.filesRemoved)]" }
+            Write-Output $line
+        }
+        Write-Output ("Summary: installed {0}, updated {1}, up-to-date {2}, skipped {3}, failed {4}." -f $summary['installed'], $summary['updated'], $summary['upToDate'], $summary['skipped'], $summary['failed'])
+        if ($DryRun) { Write-Output 'Dry run: no files were written.' }
+    }
+
+    if ($script:HadFailure -or $summary['failed'] -gt 0) { exit 1 }
+    exit 0
+} catch {
+    # Write directly to stderr: Write-Error would rethrow under $ErrorActionPreference = 'Stop'.
+    $message = $_.Exception.Message
+    if ($OutputFormat -eq 'Json') {
+        [ordered]@{ error = $message; results = @(); summary = [ordered]@{ installed = 0; updated = 0; upToDate = 0; skipped = 0; failed = 1 } } | ConvertTo-Json -Depth 4
+    } else {
+        [Console]::Error.WriteLine("Error: $message")
+    }
+    exit 2
 }
