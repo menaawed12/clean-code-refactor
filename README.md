@@ -133,7 +133,7 @@ bash ./scripts/install.sh --editor codex   # user-scoped by default
 - **Exit codes:** `0` success (intentional skips allowed), `1` one or more targets failed, `2` usage or preflight error. Preflight failures abort before anything is written.
 - **Upgrades:** installs record a `.clean-code-refactor-install.json` receipt with version and file hashes. A re-run updates owned files, removes files the package no longer ships (including nested leftovers), and preserves unrelated files. Without `-Force`/`--force` your modifications to owned files are detected and preserved; use force to overwrite.
 - **Safety:** destinations must resolve inside the declared root; symlinked or junctioned path components are refused, and a failed preflight leaves the filesystem untouched.
-- **User scope:** available where the registry declares it (Claude Code, Cursor, OpenCode, Codex). Redirect homes with `-UserHome`/`--user-home` (and `-CodexHome`/`--codex-home`) for tests or portable installs. Destinations marked `verify-against-docs` should be confirmed against your installed editor's documentation. Global availability never implies automatic execution or elevated privileges.
+- **User scope:** available where the registry declares it (GitHub Copilot, Claude Code, Cursor, OpenCode, Codex). Redirect homes with `-UserHome`/`--user-home` (and `-CodexHome`/`--codex-home`) for tests or portable installs. Destinations marked `verify-against-docs` should be confirmed against your installed editor's documentation. Global availability never implies automatic execution or elevated privileges.
 
 Use `-Force` or `--force` only when replacing this skill's previously installed files. The installers never overwrite unrelated instructions.
 

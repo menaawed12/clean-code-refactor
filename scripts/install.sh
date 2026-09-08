@@ -67,6 +67,7 @@ PROJECT_TARGETS_EOF
 USER_TARGETS=$(cat <<'USER_TARGETS_EOF'
 claude|skill-folder|home|.claude/skills/clean-code-refactor|-|-|-|-|-|home:.claude|verify-against-docs
 codex|skill-folder|codex-home|skills/clean-code-refactor|-|-|-|-|-|codex-home:skills|-
+copilot|skill-folder|home|.copilot/skills/clean-code-refactor|-|-|-|-|-|home:.copilot|verify-against-docs
 cursor|skill-folder|home|.cursor/skills/clean-code-refactor|-|-|-|-|-|home:.cursor|verify-against-docs
 opencode|skill-folder|xdg-config|opencode/skills/clean-code-refactor|-|-|-|-|-|xdg-config:opencode|verify-against-docs
 USER_TARGETS_EOF

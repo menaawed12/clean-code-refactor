@@ -14,7 +14,7 @@ Statuses:
 | --- | --- | --- | --- |
 | agents (AGENTS.md standard) | `.agents/skills/clean-code-refactor/` + `AGENTS.md` pointer | — | skill folder |
 | Cursor | `.cursor/rules/clean-code-refactor.mdc` | `~/.cursor/skills/clean-code-refactor/` (verify-against-docs) | Cursor `.mdc` rule |
-| GitHub Copilot | `.github/skills/clean-code-refactor/` + `.github/copilot-instructions.md` pointer | — | skill folder |
+| GitHub Copilot | `.github/skills/clean-code-refactor/` + `.github/copilot-instructions.md` pointer | `~/.copilot/skills/clean-code-refactor/` (verify-against-docs) | skill folder |
 | Claude Code | `.claude/skills/clean-code-refactor/` | `~/.claude/skills/clean-code-refactor/` (verify-against-docs) | skill folder |
 | Codex CLI | — | `$CODEX_HOME` or `~/.codex/skills/clean-code-refactor/` | skill folder |
 | Windsurf | `.windsurf/rules/clean-code-refactor.md` | — | Markdown rule |
@@ -27,7 +27,7 @@ Statuses:
 
 ## What is verified
 
-The behavioral test suite (`tests/`) verifies installer output: files land at the declared destinations, generated links resolve, upgrades replace owned content without leaving stale or nested files, user modifications are protected, dry-run writes nothing, and destinations cannot be redirected outside the selected root through symlinks. **File-copy success is not evidence that an editor loaded a skill.** Loading, activation, and precedence must be confirmed per editor version against its official documentation before being claimed; report any gap you observe rather than assuming support.
+User-scope destinations for GitHub Copilot (`~/.copilot/skills/`), Claude Code (`~/.claude/skills/`), and the shared `~/.agents/skills/` location are confirmed against the official VS Code agent-skills documentation (checked 2026-09-08). The behavioral test suite (`tests/`) verifies installer output: files land at the declared destinations, generated links resolve, upgrades replace owned content without leaving stale or nested files, user modifications are protected, dry-run writes nothing, and destinations cannot be redirected outside the selected root through symlinks. **File-copy success is not evidence that an editor loaded a skill.** Loading, activation, and precedence must be confirmed per editor version against its official documentation before being claimed; report any gap you observe rather than assuming support.
 
 ## Roadmap (not installed by this release)
 

@@ -70,6 +70,14 @@
           "detect": [
             { "root": "project", "path": ".github" }
           ]
+        },
+        "user": {
+          "root": "home",
+          "path": ".copilot/skills/clean-code-refactor",
+          "verification": "verify-against-docs",
+          "detect": [
+            { "root": "home", "path": ".copilot" }
+          ]
         }
       }
     },
