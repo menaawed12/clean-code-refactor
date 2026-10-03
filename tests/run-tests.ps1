@@ -246,13 +246,14 @@ try {
     # ---------------------------------------------------------------- T14 bash suite
     # Prefer Git Bash; System32 bash.exe is WSL and cannot run Windows-style paths.
     $bashExe = $null
+    # These variables exist only on Windows; skip unset ones so Join-Path never gets $null.
     $gitBashCandidates = @(
-        (Join-Path $env:ProgramFiles 'Git/bin/bash.exe'),
-        (Join-Path ${env:ProgramFiles(x86)} 'Git/bin/bash.exe'),
-        (Join-Path $env:LOCALAPPDATA 'Programs/Git/bin/bash.exe')
-    )
+        @($env:ProgramFiles, 'Git/bin/bash.exe'),
+        @(${env:ProgramFiles(x86)}, 'Git/bin/bash.exe'),
+        @($env:LOCALAPPDATA, 'Programs/Git/bin/bash.exe')
+    ) | Where-Object { $_[0] } | ForEach-Object { Join-Path $_[0] $_[1] }
     foreach ($candidate in $gitBashCandidates) {
-        if ($candidate -and (Test-Path $candidate)) { $bashExe = $candidate; break }
+        if (Test-Path -LiteralPath $candidate) { $bashExe = $candidate; break }
     }
     if (-not $bashExe) {
         $resolvedBash = Get-Command bash -ErrorAction SilentlyContinue
