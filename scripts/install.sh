@@ -11,7 +11,7 @@
 
 set -euo pipefail
 
-PKG_VERSION='1.1.0'
+PKG_VERSION='1.2.0'
 SKILL_FILE='SKILL.md'
 REFERENCE_DIR='references'
 PROFILER_SOURCE='scripts/profile-repository.ps1'

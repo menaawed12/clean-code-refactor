@@ -46,6 +46,7 @@ Profile a target repository before non-trivial work:
 - `integrations/registry.json` — machine-readable editor/agent target registry (single source of truth for installers).
 - `docs/ide-compatibility.md` — human-readable compatibility summary and roadmap.
 - `SECURITY.md` — vulnerability reporting route and design commitments.
+- `CHANGELOG.md` — release history; the version itself lives in `integrations/registry.json`.
 - `scripts/validate-skill.ps1` — validates package structure, links, registry/installer parity, and required instructions.
 - `scripts/install.ps1` — registry-driven installer (Windows PowerShell).
 - `scripts/install.sh` — registry-parity Bash installer for macOS and Linux.
@@ -157,7 +158,7 @@ Review the changed TypeScript files for lint, duplicate code, security, and reli
 .\scripts\validate-skill.ps1
 ```
 
-Validation checks required files and sections, resolves every relative Markdown link in the package, verifies the rule-body path transformation produces no double-prefixed or broken links, and fails when the registry and either installer drift apart.
+Validation checks the `SKILL.md` front matter against the Agent Skills specification (allowed fields, name format, length limits), keeps the package version identical across the registry, `SKILL.md`, the bash installer, and `CHANGELOG.md`, checks required files and sections, resolves every relative Markdown link in the package, verifies the rule-body path transformation produces no double-prefixed or broken links, and fails when the registry and either installer drift apart.
 
 ## Test
 

@@ -5,12 +5,15 @@
 .DESCRIPTION
     Layer 1 of the package's verification (behavioral installer tests live in tests/):
       - Required files and sections exist.
-      - SKILL.md front matter, required sections, language coverage, and reference links.
+      - SKILL.md front matter against the Agent Skills specification (fields, name
+        format, length limits), required sections, language coverage, and reference links.
       - Every relative Markdown link in the package resolves to an existing file.
       - The rule-body path transformation is single-pass: no double prefixes, and every
         generated local link resolves against the package sources.
       - integrations/registry.json parses, is internally consistent, and stays in parity
         with both installers' embedded target tables (drift fails validation).
+      - The package version is single-sourced in integrations/registry.json and matches
+        SKILL.md metadata, scripts/install.sh, and a CHANGELOG.md entry.
       - Installers declare the behavioral contract markers (dry-run, force, preflight).
 #>
 [CmdletBinding()]
@@ -36,6 +39,7 @@ $apiSafetyPath = Join-Path $referenceDir 'api-and-data-safety.md'
 $testSupplyChainPath = Join-Path $referenceDir 'test-performance-and-supply-chain.md'
 $reviewReportPath = Join-Path $referenceDir 'structured-review-report.md'
 $securityPolicyPath = Join-Path $RepositoryRoot 'SECURITY.md'
+$changelogPath = Join-Path $RepositoryRoot 'CHANGELOG.md'
 $registryPath = Join-Path $RepositoryRoot 'integrations/registry.json'
 $compatibilityDocPath = Join-Path $RepositoryRoot 'docs/ide-compatibility.md'
 $installerPath = Join-Path $RepositoryRoot 'scripts/install.ps1'
@@ -52,15 +56,75 @@ $requiredHeadings = @(
     '## Completion Report'
 )
 
-foreach ($path in @($skillPath, $readmePath, $referencePath, $staticQualityRulesPath, $policyGuidancePath, $apiSafetyPath, $testSupplyChainPath, $reviewReportPath, $agentSecurityPath, $securityPolicyPath, $registryPath, $compatibilityDocPath, $installerPath, $bashInstallerPath, $profileScriptPath, $psTestRunnerPath, $bashTestRunnerPath)) {
+foreach ($path in @($skillPath, $readmePath, $referencePath, $staticQualityRulesPath, $policyGuidancePath, $apiSafetyPath, $testSupplyChainPath, $reviewReportPath, $agentSecurityPath, $securityPolicyPath, $changelogPath, $registryPath, $compatibilityDocPath, $installerPath, $bashInstallerPath, $profileScriptPath, $psTestRunnerPath, $bashTestRunnerPath)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         throw "Required file is missing: $path"
     }
 }
 
 $skill = Get-Content -LiteralPath $skillPath -Raw
-if ($skill -notmatch '(?s)^---\r?\nname: "clean-code-refactor"\r?\ndescription: ".+?"\r?\ncompatibility: ".+?"\r?\nmetadata:\r?\n  author: ".+?"\r?\n---') {
-    throw 'SKILL.md front matter is invalid or incomplete.'
+
+# --------------------------- front matter (Agent Skills specification) -----
+
+function ConvertFrom-FrontMatterScalar {
+    param([string]$Value)
+    $Value = $Value.Trim()
+    if ($Value.Length -ge 2 -and (($Value[0] -eq '"' -and $Value[-1] -eq '"') -or ($Value[0] -eq "'" -and $Value[-1] -eq "'"))) {
+        return $Value.Substring(1, $Value.Length - 2)
+    }
+    return $Value
+}
+
+# Parses the subset of YAML the package uses: top-level scalars plus one level of
+# string-valued maps (metadata). Anything else is rejected rather than guessed at.
+function ConvertFrom-FrontMatter {
+    param([string]$Text)
+    $match = [regex]::Match($Text, '(?s)^---\r?\n(.*?)\r?\n---\r?\n')
+    if (-not $match.Success) { throw 'SKILL.md must start with a front matter block delimited by --- lines.' }
+    $fields = [ordered]@{}
+    $currentMap = $null
+    foreach ($line in ($match.Groups[1].Value -split '\r?\n')) {
+        if ([string]::IsNullOrWhiteSpace($line) -or $line -match '^\s*#') { continue }
+        if ($line -match '^  ([A-Za-z0-9_-]+):\s*(.*)$' -and $null -ne $currentMap) {
+            $currentMap[$Matches[1]] = ConvertFrom-FrontMatterScalar $Matches[2]
+        } elseif ($line -match '^([A-Za-z0-9_-]+):\s*$') {
+            $currentMap = [ordered]@{}
+            $fields[$Matches[1]] = $currentMap
+        } elseif ($line -match '^([A-Za-z0-9_-]+):\s+(.+)$') {
+            $currentMap = $null
+            $fields[$Matches[1]] = ConvertFrom-FrontMatterScalar $Matches[2]
+        } else {
+            throw "SKILL.md front matter line is not supported: $line"
+        }
+    }
+    return $fields
+}
+
+$frontMatter = ConvertFrom-FrontMatter -Text $skill
+$allowedFields = @('name', 'description', 'license', 'compatibility', 'metadata', 'allowed-tools')
+foreach ($key in $frontMatter.Keys) {
+    if ($allowedFields -notcontains $key) { throw "SKILL.md front matter has unknown field '$key' (allowed: $($allowedFields -join ', '))." }
+}
+foreach ($key in @('name', 'description', 'license', 'compatibility', 'metadata')) {
+    if (-not $frontMatter.Contains($key)) { throw "SKILL.md front matter is missing '$key'." }
+}
+foreach ($key in @('name', 'description', 'license', 'compatibility')) {
+    if ($frontMatter[$key] -isnot [string]) { throw "SKILL.md front matter '$key' must be a string." }
+}
+$skillName = $frontMatter['name']
+if ($skillName.Length -gt 64 -or $skillName -notmatch '^[a-z0-9]+(-[a-z0-9]+)*$') {
+    throw "SKILL.md name '$skillName' must be 1-64 lowercase letters, digits, and single hyphens."
+}
+if ($frontMatter['description'].Length -lt 1 -or $frontMatter['description'].Length -gt 1024) {
+    throw "SKILL.md description must be 1-1024 characters (found $($frontMatter['description'].Length))."
+}
+if ($frontMatter['compatibility'].Length -gt 500) {
+    throw "SKILL.md compatibility must be at most 500 characters (found $($frontMatter['compatibility'].Length))."
+}
+$skillMetadata = $frontMatter['metadata']
+if ($skillMetadata -isnot [System.Collections.IDictionary]) { throw 'SKILL.md metadata must be a map of string values.' }
+foreach ($key in @('author', 'version')) {
+    if (-not $skillMetadata.Contains($key) -or [string]::IsNullOrWhiteSpace($skillMetadata[$key])) { throw "SKILL.md metadata is missing '$key'." }
 }
 
 foreach ($heading in $requiredHeadings) {
@@ -113,6 +177,22 @@ foreach ($markdownFile in $markdownFiles) {
 $registry = Get-Content -LiteralPath $registryPath -Raw | ConvertFrom-Json
 function Get-Prop { param($Object, [string]$Name) $p = $Object.PSObject.Properties[$Name]; if ($p) { $p.Value } else { $null } }
 $package = Get-Prop $registry 'package'
+
+# --------------------------- single-source version -------------------------
+# integrations/registry.json owns the package name and version; every other copy must match.
+
+$packageVersion = Get-Prop $package 'version'
+if ($packageVersion -notmatch '^\d+\.\d+\.\d+$') { throw "Registry package version '$packageVersion' is not MAJOR.MINOR.PATCH." }
+if ($skillName -ne (Get-Prop $package 'name')) { throw "SKILL.md name '$skillName' does not match registry package name '$(Get-Prop $package 'name')'." }
+if ($skillMetadata['version'] -ne $packageVersion) { throw "SKILL.md metadata version '$($skillMetadata['version'])' does not match registry version '$packageVersion'." }
+$bashVersionMatch = [regex]::Match((Get-Content -LiteralPath $bashInstallerPath -Raw), "(?m)^PKG_VERSION='([^']*)'")
+if (-not $bashVersionMatch.Success -or $bashVersionMatch.Groups[1].Value -ne $packageVersion) {
+    throw "scripts/install.sh PKG_VERSION does not match registry version '$packageVersion'."
+}
+if ((Get-Content -LiteralPath $changelogPath -Raw) -notmatch ('(?m)^## \[' + [regex]::Escape($packageVersion) + '\]')) {
+    throw "CHANGELOG.md has no '## [$packageVersion]' entry."
+}
+
 $layout = Get-Prop $registry 'ruleFileLayout'
 $referencesDirName = Get-Prop $layout 'referencesDirName'
 $toolsDirName = Get-Prop $layout 'toolsDirName'
