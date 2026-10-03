@@ -3,8 +3,9 @@
 # Security posture:
 #   - Minimal permissions (contents: read); no secrets are used or required.
 #   - Pull requests run the same read-only suite; untrusted PR code never receives credentials.
-#   - NOTE: before production use, replace the version-tag action references with
-#     commit-SHA pins (immutable references) per the repository's supply-chain policy.
+#   - Actions are pinned to full commit SHAs (version in the trailing comment) and kept
+#     current by Dependabot (.github/dependabot.yml). Checkout does not persist credentials.
+#   - Tools installed at run time are pinned to exact versions.
 name: CI
 
 on:
@@ -15,11 +16,23 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PSSCRIPTANALYZER_VERSION: 1.25.0
+  ACTIONLINT_VERSION: 1.7.12
+  ZIZMOR_VERSION: 1.30.1
+
 jobs:
   windows:
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Validate package (Windows PowerShell 5.1)
         shell: powershell
         run: ./scripts/validate-skill.ps1
@@ -33,28 +46,50 @@ jobs:
         shell: pwsh
         run: |
           Set-PSRepository PSGallery -InstallationPolicy Trusted
-          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
-          $findings = Invoke-ScriptAnalyzer -Path scripts -Recurse -Severity Error
-          if ($findings) { $findings | Format-Table; exit 1 }
+          Install-Module PSScriptAnalyzer -RequiredVersion $env:PSSCRIPTANALYZER_VERSION -Force -Scope CurrentUser
+          $findings = @('scripts', 'tests') | ForEach-Object {
+            Invoke-ScriptAnalyzer -Path $_ -Recurse -Settings ./PSScriptAnalyzerSettings.psd1
+          }
+          if ($findings) { $findings | Format-Table -AutoSize | Out-String -Width 200; exit 1 }
 
   linux:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Lint shell (ShellCheck)
         run: shellcheck scripts/install.sh tests/install.sh.tests.sh
       - name: Bash installer behavioral tests
         run: bash tests/install.sh.tests.sh
-      - name: Full suite (PowerShell 7 incl. bash suite)
+      - name: PowerShell suite and validation (PowerShell 7)
         shell: pwsh
-        run: ./tests/run-tests.ps1
+        run: ./tests/run-tests.ps1 -SkipBash
 
   macos:
     runs-on: macos-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Validate package (PowerShell 7)
         shell: pwsh
         run: ./scripts/validate-skill.ps1
       - name: Bash installer behavioral tests
         run: bash tests/install.sh.tests.sh
+
+  workflow-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Lint workflows (actionlint)
+        run: |
+          go install "github.com/rhysd/actionlint/cmd/actionlint@v${ACTIONLINT_VERSION}"
+          "$(go env GOPATH)/bin/actionlint" -color
+      - name: Audit workflow security (zizmor, offline)
+        run: pipx run --spec "zizmor==${ZIZMOR_VERSION}" zizmor --offline --format=github .

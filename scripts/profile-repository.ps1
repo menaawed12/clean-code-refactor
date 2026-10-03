@@ -35,6 +35,8 @@
 .PARAMETER TimeoutSeconds
     Wall-clock budget for the walk (default 30). Exceeding it marks the report incomplete.
 #>
+# MaxFileBytes is read by Read-BoundedText through script scope, which the analyzer cannot follow.
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'MaxFileBytes', Justification = 'Read by Read-BoundedText through script scope.')]
 [CmdletBinding()]
 param(
     [string]$Path = (Get-Location).Path,
@@ -148,7 +150,7 @@ function Read-BoundedText {
     }
 }
 
-function Add-ManifestFrameworks {
+function Add-ManifestFramework {
     param([string]$Name, [string]$Text, [string]$Relative)
     if ($null -eq $Text) { return }
     switch ($Name) {
@@ -220,7 +222,7 @@ while ($stack.Count -gt 0) {
                 }
                 if ($entry.Name -in @('package.json', 'composer.json', 'Gemfile', 'pubspec.yaml', 'pyproject.toml')) {
                     $manifestText = Read-BoundedText -FileFullName $entry.FullName
-                    Add-ManifestFrameworks -Name $entry.Name -Text $manifestText -Relative $relative
+                    Add-ManifestFramework -Name $entry.Name -Text $manifestText -Relative $relative
                 }
             }
             if ($extension -in @('.sln', '.csproj', '.fsproj', '.vbproj')) { Add-Signal -Category 'language' -Value '.NET' -Confidence 'high' -EvidenceRelativePath $relative }
@@ -254,18 +256,18 @@ while ($stack.Count -gt 0) {
 }
 $stopwatch.Stop()
 
-function Get-SignalValues {
+function Get-SignalValue {
     param([string]$Category)
     @($signals | Where-Object { $_.category -eq $Category } | Sort-Object value | ForEach-Object value)
 }
 
-$languages = Get-SignalValues -Category 'language'
-$frameworks = Get-SignalValues -Category 'framework'
-$checks = Get-SignalValues -Category 'check'
-$delivery = Get-SignalValues -Category 'delivery'
-$riskSignals = Get-SignalValues -Category 'riskSignals'
-$docHints = Get-SignalValues -Category 'documentationHints'
-$notes = Get-SignalValues -Category 'note'
+$languages = Get-SignalValue -Category 'language'
+$frameworks = Get-SignalValue -Category 'framework'
+$checks = Get-SignalValue -Category 'check'
+$delivery = Get-SignalValue -Category 'delivery'
+$riskSignals = Get-SignalValue -Category 'riskSignals'
+$docHints = Get-SignalValue -Category 'documentationHints'
+$notes = Get-SignalValue -Category 'note'
 
 $complete = ($null -eq $script:incompleteReason)
 $profileSuggestion = if ($riskSignals.Count -gt 0) {

@@ -108,7 +108,7 @@ function Install-PointerFile {
     }
 }
 
-function Ensure-EditorConfig {
+function Set-EditorConfigEntry {
     param([string]$ConfigPath, [string]$Entry)
     if (-not (Test-Path -LiteralPath $ConfigPath)) {
         $configText = "{`n  `"instructions`": [`n    `"$Entry`"`n  ]`n}`n"
@@ -119,7 +119,7 @@ function Ensure-EditorConfig {
     }
 }
 
-function Use-AdditiveExtras {
+function Install-AdditiveExtra {
     # Pointer sections and config entries are additive and marked; re-check them even
     # when the owned unit itself is already up to date (a user may have removed them).
     param([string]$Kind, [string]$Root, $ScopeDef)
@@ -130,7 +130,7 @@ function Use-AdditiveExtras {
     }
     $config = Get-Prop $ScopeDef 'config'
     if ($Kind -eq 'rule-file' -and $null -ne $config) {
-        Ensure-EditorConfig -ConfigPath (Join-UnderRoot -Root $Root -RelativePath (Get-Prop $config 'file')) -Entry (Get-Prop $config 'entry')
+        Set-EditorConfigEntry -ConfigPath (Join-UnderRoot -Root $Root -RelativePath (Get-Prop $config 'file')) -Entry (Get-Prop $config 'entry')
     }
 }
 
@@ -291,7 +291,7 @@ function Sync-MirroredDirectory {
         $directories = @(Get-ChildItem -LiteralPath $Destination -Recurse -Directory -Force | Sort-Object { $_.FullName.Length } -Descending)
         foreach ($directory in $directories) {
             if (@(Get-ChildItem -LiteralPath $directory.FullName -Force -ErrorAction SilentlyContinue).Count -eq 0) {
-                try { Remove-Item -LiteralPath $directory.FullName -Force } catch { }
+                try { Remove-Item -LiteralPath $directory.FullName -Force } catch { Write-Verbose "Could not prune $($directory.FullName): $_" }
             }
         }
     }
@@ -590,7 +590,7 @@ try {
         if ($item.Status -eq 'up-to-date') {
             # Owned files already match the package; still re-check additive pointer/config extras.
             $upToDateRoot = $roots[(Get-Prop $item.ScopeDef 'root')]
-            Use-AdditiveExtras -Kind $item.Kind -Root $upToDateRoot -ScopeDef $item.ScopeDef
+            Install-AdditiveExtra -Kind $item.Kind -Root $upToDateRoot -ScopeDef $item.ScopeDef
             $results += [pscustomobject]@{
                 editor = $item.Editor; scope = $item.Scope; status = $item.Status
                 destination = $item.Destination; reason = $item.Reason
@@ -647,7 +647,7 @@ try {
             }
 
             # Additive, marked extras (pointer sections, config entries).
-            Use-AdditiveExtras -Kind $kind -Root $rootPath -ScopeDef $scopeDef
+            Install-AdditiveExtra -Kind $kind -Root $rootPath -ScopeDef $scopeDef
 
             # ----------------------------- Receipt ----------------------------
             if (-not $DryRun) {
