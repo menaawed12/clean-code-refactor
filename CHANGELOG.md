@@ -2,6 +2,18 @@
 
 All notable changes to this package are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the package uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The version is defined once in `integrations/registry.json`; `scripts/validate-skill.ps1` fails if `SKILL.md`, `scripts/install.sh`, or this file disagree with it.
 
+## [1.4.0] - Unreleased
+
+### Added
+
+- Organization and project policy. `policy.json` installed next to the skill (`install.sh --policy`, `install.ps1 -PolicyFile`) sets organization gates, standards levels, banned APIs, dependency rules, exception tickets, and reporting. `.clean-code-refactor/policy.json` in a repository may only tighten them; loosening attempts are ignored and reported. `scripts/check-policy.ps1` validates policies and prints the effective policy; `policy/policy.schema.json` and `policy/policy.example.json` document the format.
+
+### Fixed
+
+- The bash installer never reported a target as up-to-date: it wrote `SKILL.md` without its final newline and compared generated rule files with the source `SKILL.md`. The PowerShell installer had the same rule-file comparison bug. Re-runs now report up-to-date and rewrite nothing, and the two installers produce byte-identical installs that each recognizes as current.
+- `install.sh --json` printed progress messages to standard output on a first install, so the output was not valid JSON.
+- The bash test that claimed to check up-to-date detection only searched for the word `upToDate`, which every summary contains. It now checks the counts.
+
 ## [1.3.0] - Unreleased
 
 ### Added

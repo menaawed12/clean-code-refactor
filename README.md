@@ -57,6 +57,7 @@ bash ./scripts/profile-repository.sh --path /path/to/project
 - `SECURITY.md` — vulnerability reporting route and design commitments.
 - `CHANGELOG.md` — release history; the version itself lives in `integrations/registry.json`.
 - `scripts/validate-skill.ps1` — validates package structure, links, registry/installer parity, and required instructions.
+- `scripts/check-policy.ps1` and `policy/` — organization and project policy validation, schema, and example.
 - `scripts/sync-bash-installer.ps1` — regenerates the bash installer's copy of the registry; run it after editing `integrations/registry.json`.
 - `scripts/install.ps1` — registry-driven installer (Windows PowerShell).
 - `scripts/install.sh` — registry-parity Bash installer for macOS and Linux.
@@ -129,6 +130,24 @@ Supported editor integrations are declared in `integrations/registry.json` and s
 | Amazon Q Developer | `.amazonq/rules/clean-code-refactor.md` |
 | OpenCode | `.opencode/skills/clean-code-refactor/` |
 | Kilo Code | `.kilo/rules/clean-code-refactor.md` and a `kilo.jsonc` `instructions` entry |
+
+### Organization policy
+
+Administrators can install an organization policy next to the skill so every repository gets the same gates:
+
+```bash
+bash ./scripts/install.sh --editor agents,claude --target /path/to/project --policy ./org-policy.json
+```
+
+```powershell
+.\scripts\install.ps1 -Editor agents,claude -TargetPath C:\path\to\project -PolicyFile .\org-policy.json
+```
+
+The policy sets coverage and duplication thresholds, blocking severities, ASVS and WCAG levels, banned APIs, allowed dependency registries, exception-ticket rules, and SARIF reporting. Start from [policy/policy.example.json](policy/policy.example.json); [policy/policy.schema.json](policy/policy.schema.json) gives editors completion and validation. A repository can add `.clean-code-refactor/policy.json` to tighten the rules further, but never to loosen them. Check the effective policy, for example in CI, with:
+
+```powershell
+pwsh ./scripts/check-policy.ps1 -ProjectPath /path/to/project -OrgPolicyPath ./org-policy.json
+```
 
 ### Options and behavior
 

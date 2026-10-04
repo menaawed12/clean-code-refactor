@@ -75,7 +75,8 @@ check "T1 receipt written" [ -f "$T/.cursor/rules/clean-code-refactor-tools/.cle
 # ---------------------------------------------------------------- T2 idempotent re-run
 run_installer --editor cursor --target "$T" --json
 assert_eq "T2 re-run exits 0" "$RUN_EXIT" "0"
-check "T2 JSON reports upToDate" output_has '"upToDate"'
+check "T2 re-run reports the target up-to-date" output_has '"upToDate": 1,'
+check "T2 re-run rewrites nothing" output_has '"updated": 0,'
 
 # ---------------------------------------------------------------- T3 unmanaged install skip
 T="$(new_target t3)"
@@ -111,6 +112,9 @@ T="$(new_target t5)"
 run_installer --editor claude --target "$T"
 SKILL_COPY="$T/.claude/skills/clean-code-refactor/SKILL.md"
 check "T5 skill folder installed" [ -f "$SKILL_COPY" ]
+check "T5 installed SKILL.md is byte-identical to the source" cmp -s "$SKILL_COPY" "$repository_root/SKILL.md"
+run_installer --editor claude --target "$T" --json
+check "T5 skill-folder re-run is up-to-date" output_has '"upToDate": 1,'
 check "T5 bash profiler shipped in skill folder" [ -f "$T/.claude/skills/clean-code-refactor/scripts/profile-repository.sh" ]
 printf '\n<!-- user edit -->\n' >> "$SKILL_COPY"
 run_installer --editor claude --target "$T"
@@ -202,6 +206,40 @@ T="$(new_target t14)"
 run_installer --editor codex --target "$T"
 assert_eq "T14 codex skipped in project scope" "$RUN_EXIT" "0"
 check "T14 skip reason reported" output_has "not declared"
+
+# ---------------------------------------------------------------- T17 first-run JSON stays parseable
+T="$(new_target t17)"
+JSON_ONLY="$(bash "$installer" --editor agents,copilot,kilo --target "$T" --json 2>/dev/null)"
+check "T17 first-run JSON output starts with an object" [ "${JSON_ONLY:0:1}" = "{" ]
+check_not "T17 progress messages stay off stdout in JSON mode" grep -q '^Created' <<< "$JSON_ONLY"
+
+# ---------------------------------------------------------------- T18 organization policy
+P="$repository_root/policy/policy.example.json"
+T="$(new_target t18)"
+run_installer --editor claude,cursor --target "$T" --policy "$P" --json
+assert_eq "T18 install with policy exits 0" "$RUN_EXIT" "0"
+check "T18 policy installed in skill folder" cmp -s "$P" "$T/.claude/skills/clean-code-refactor/policy.json"
+check "T18 policy installed next to rule-file tools" cmp -s "$P" "$T/.cursor/rules/clean-code-refactor-tools/policy.json"
+check "T18 policy recorded in receipt" grep -q '"policy.json"' "$T/.claude/skills/clean-code-refactor/.clean-code-refactor-install.json"
+run_installer --editor claude,cursor --target "$T" --policy "$P" --json
+check "T18 same policy re-run is up-to-date" output_has '"upToDate": 2,'
+run_installer --editor claude --target "$T" --json
+check "T18 re-run without --policy keeps the policy" [ -f "$T/.claude/skills/clean-code-refactor/policy.json" ]
+check "T18 kept policy stays in the receipt" grep -q '"policy.json"' "$T/.claude/skills/clean-code-refactor/.clean-code-refactor-install.json"
+sed 's/"newCodeCoverageMin": 85/"newCodeCoverageMin": 90/' "$P" > "$TMP_ROOT/policy-changed.json"
+run_installer --editor claude --target "$T" --policy "$TMP_ROOT/policy-changed.json" --json
+check "T18 changed policy updates the install" grep -q '"newCodeCoverageMin": 90' "$T/.claude/skills/clean-code-refactor/policy.json"
+run_installer --editor claude --target "$T" --policy "$TMP_ROOT/does-not-exist.json"
+assert_eq "T18 missing policy file is a usage error" "$RUN_EXIT" "2"
+if command -v pwsh >/dev/null 2>&1; then
+  printf '{ "policyVersion": 9 }' > "$TMP_ROOT/policy-invalid.json"
+  T="$(new_target t18b)"
+  run_installer --editor claude --target "$T" --policy "$TMP_ROOT/policy-invalid.json"
+  assert_eq "T18 invalid policy is rejected before writing" "$RUN_EXIT" "2"
+  check_not "T18 nothing written for an invalid policy" [ -e "$T/.claude" ]
+else
+  skip_test "T18 invalid policy rejection (PowerShell not available to validate)"
+fi
 
 # ---------------------------------------------------------------- T15 bash profiler
 profiler="$repository_root/scripts/profile-repository.sh"

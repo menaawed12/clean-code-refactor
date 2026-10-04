@@ -135,7 +135,7 @@ try {
     $plan = $null
     try { $plan = $json.Output | ConvertFrom-Json } catch { $plan = $null }
     Assert-True 'T4 re-run exits 0' ($json.ExitCode -eq 0)
-    Assert-True 'T4 re-run reports everything up-to-date' ($null -ne $plan -and $plan.summary.upToDate -gt 0 -and $plan.summary.failed -eq 0) 'summary counts inconsistent'
+    Assert-True 'T4 re-run reports everything up-to-date' ($null -ne $plan -and $plan.summary.upToDate -gt 0 -and $plan.summary.updated -eq 0 -and $plan.summary.failed -eq 0) "summary: $($plan.summary | ConvertTo-Json -Compress)"
 
     # ---------------------------------------------------------------- T5 unmanaged install is skipped without force
     $target = New-TempDirectory; Register-Cleanup $target
@@ -283,6 +283,57 @@ try {
         }
         Assert-True 'T14 bash installer suite passes' ($LASTEXITCODE -eq 0) "exit $LASTEXITCODE"
     }
+
+    # ---------------------------------------------------------------- T17 installers are interchangeable
+    # A bash install must look up-to-date to the PowerShell installer: same bytes, same receipts.
+    if (-not $bashExe) {
+        $script:skipped++
+        Write-Host 'SKIP: T17 cross-installer equivalence (bash not available)'
+    } else {
+        $crossTarget = New-TempDirectory; Register-Cleanup $crossTarget
+        $previous = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            & $bashExe (($bashSuite -replace 'tests[\\/]install\.sh\.tests\.sh$', 'scripts/install.sh') -replace '\\', '/') --editor all --target ($crossTarget -replace '\\', '/') *> $null
+            $bashExit = $LASTEXITCODE
+        } finally {
+            $ErrorActionPreference = $previous
+        }
+        Assert-True 'T17 bash install of every target exits 0' ($bashExit -eq 0) "exit $bashExit"
+        $cross = Invoke-InstallerOutput -Arguments @('-Editor', 'all', '-TargetPath', $crossTarget, '-OutputFormat', 'Json')
+        $crossPlan = $null
+        try { $crossPlan = $cross.Output | ConvertFrom-Json } catch { $crossPlan = $null }
+        Assert-True 'T17 PowerShell sees the bash install as up-to-date' ($null -ne $crossPlan -and $crossPlan.summary.updated -eq 0 -and $crossPlan.summary.upToDate -gt 0) "summary: $($crossPlan.summary | ConvertTo-Json -Compress)"
+    }
+
+    # ---------------------------------------------------------------- T18 organization and project policy
+    $checkPolicy = Join-Path $repositoryRoot 'scripts/check-policy.ps1'
+    $examplePolicy = Join-Path $repositoryRoot 'policy/policy.example.json'
+    $policyProject = New-TempDirectory; Register-Cleanup $policyProject
+    New-Item -ItemType Directory -Path (Join-Path $policyProject '.clean-code-refactor') | Out-Null
+    Set-Content -LiteralPath (Join-Path $policyProject '.clean-code-refactor/policy.json') -NoNewline -Value '{ "policyVersion": 1, "gates": { "newCodeCoverageMin": 50, "newCodeDuplicationMax": 1 }, "exceptions": { "requireTicket": false }, "profile": { "default": "legacy-safe" }, "bannedApis": [ { "id": "js-eval", "text": "noop", "reason": "override" } ] }'
+    $policyReport = & $powershellHost -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $checkPolicy -ProjectPath $policyProject -OrgPolicyPath $examplePolicy | Out-String | ConvertFrom-Json
+    Assert-True 'T18 project policy cannot lower the coverage minimum' ($policyReport.effective.gates.newCodeCoverageMin -eq 85)
+    Assert-True 'T18 project policy can lower the duplication maximum' ($policyReport.effective.gates.newCodeDuplicationMax -eq 1)
+    Assert-True 'T18 project policy cannot switch off exception tickets' ($policyReport.effective.exceptions.requireTicket -eq $true)
+    Assert-True 'T18 project policy cannot redefine an organization banned API' (@($policyReport.effective.bannedApis | Where-Object { $_.id -eq 'js-eval' -and $_.text -eq 'eval(' }).Count -eq 1)
+    Assert-True 'T18 project policy cannot choose a forbidden legacy-safe profile' ($policyReport.effective.profile.default -eq 'strict')
+    Assert-True 'T18 loosening attempts are reported' (@($policyReport.ignored).Count -eq 4)
+    Set-Content -LiteralPath (Join-Path $policyProject '.clean-code-refactor/policy.json') -NoNewline -Value '{ "policyVersion": 1, "gates": { "unknown": 1 } }'
+    & $powershellHost -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $checkPolicy -ProjectPath $policyProject *> $null
+    Assert-True 'T18 an invalid project policy fails the check' ($LASTEXITCODE -eq 1)
+
+    $policyTarget = New-TempDirectory; Register-Cleanup $policyTarget
+    $exitCode = Invoke-Installer -Arguments @('-Editor', 'claude,cursor', '-TargetPath', $policyTarget, '-PolicyFile', $examplePolicy)
+    Assert-True 'T18 install with an organization policy exits 0' ($exitCode -eq 0)
+    Assert-True 'T18 policy installed in skill folder and next to rule-file tools' ((Test-Path -LiteralPath (Join-Path $policyTarget '.claude/skills/clean-code-refactor/policy.json')) -and (Test-Path -LiteralPath (Join-Path $policyTarget '.cursor/rules/clean-code-refactor-tools/policy.json')))
+    $installedReport = & $powershellHost -NoProfile -NonInteractive -ExecutionPolicy Bypass -File (Join-Path $policyTarget '.claude/skills/clean-code-refactor/scripts/check-policy.ps1') -ProjectPath $policyTarget | Out-String | ConvertFrom-Json
+    Assert-True 'T18 installed check-policy finds the organization policy' ($installedReport.effective.gates.newCodeCoverageMin -eq 85)
+    $invalidPolicy = Join-Path $policyTarget 'invalid-policy.json'
+    Set-Content -LiteralPath $invalidPolicy -NoNewline -Value '{ "policyVersion": 9 }'
+    $invalidTarget = New-TempDirectory; Register-Cleanup $invalidTarget
+    $exitCode = Invoke-Installer -Arguments @('-Editor', 'claude', '-TargetPath', $invalidTarget, '-PolicyFile', $invalidPolicy)
+    Assert-True 'T18 invalid policy is rejected before writing' (($exitCode -eq 2) -and -not (Test-Path -LiteralPath (Join-Path $invalidTarget '.claude')))
 
     # ---------------------------------------------------------------- profiler smoke test
     $fakeRepo = New-TempDirectory; Register-Cleanup $fakeRepo
