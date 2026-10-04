@@ -38,3 +38,4 @@ Apply these rules to added and modified production code without relying on any r
 - Enforce: zero new blocker or critical findings; every security hotspot reviewed; no new actionable duplication; and no reduction in relevant test coverage without an explicit reason.
 - Use the repository's approved thresholds when available; otherwise target at least 80% coverage for new executable production code and at most 3% duplicated lines in new code.
 - Report each unresolved major or minor finding with severity, file/location, risk, evidence, and the narrow reason for deferral. Never hide a finding through a broad suppression or exclusion.
+- Tag security findings with CWE and OWASP identifiers from [standards-mapping.md](standards-mapping.md) when they fit. Reliability findings about swallowed errors, fail-open handling, and unchecked results correspond to A10:2025 Mishandling of Exceptional Conditions.

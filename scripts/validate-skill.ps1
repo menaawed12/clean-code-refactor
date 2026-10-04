@@ -39,6 +39,8 @@ $policyGuidancePath = Join-Path $referenceDir 'policy-and-framework-guidance.md'
 $apiSafetyPath = Join-Path $referenceDir 'api-and-data-safety.md'
 $testSupplyChainPath = Join-Path $referenceDir 'test-performance-and-supply-chain.md'
 $reviewReportPath = Join-Path $referenceDir 'structured-review-report.md'
+$aiCodePath = Join-Path $referenceDir 'ai-and-agent-code.md'
+$standardsMappingPath = Join-Path $referenceDir 'standards-mapping.md'
 $securityPolicyPath = Join-Path $RepositoryRoot 'SECURITY.md'
 $changelogPath = Join-Path $RepositoryRoot 'CHANGELOG.md'
 $registryPath = Join-Path $RepositoryRoot 'integrations/registry.json'
@@ -58,7 +60,7 @@ $requiredHeadings = @(
     '## Completion Report'
 )
 
-foreach ($path in @($skillPath, $readmePath, $referencePath, $staticQualityRulesPath, $policyGuidancePath, $apiSafetyPath, $testSupplyChainPath, $reviewReportPath, $agentSecurityPath, $securityPolicyPath, $changelogPath, $registryPath, $compatibilityDocPath, $installerPath, $bashInstallerPath, $profileScriptPath, $bashProfileScriptPath, $psTestRunnerPath, $bashTestRunnerPath)) {
+foreach ($path in @($skillPath, $readmePath, $referencePath, $staticQualityRulesPath, $policyGuidancePath, $apiSafetyPath, $testSupplyChainPath, $reviewReportPath, $aiCodePath, $standardsMappingPath, $agentSecurityPath, $securityPolicyPath, $changelogPath, $registryPath, $compatibilityDocPath, $installerPath, $bashInstallerPath, $profileScriptPath, $bashProfileScriptPath, $psTestRunnerPath, $bashTestRunnerPath)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         throw "Required file is missing: $path"
     }
@@ -141,7 +143,7 @@ foreach ($language in @('Python', 'TypeScript', 'Java', 'Kotlin', 'Scala', 'C#',
     }
 }
 
-foreach ($reference in @('language-hardening.md', 'static-quality-rules.md', 'policy-and-framework-guidance.md', 'api-and-data-safety.md', 'test-performance-and-supply-chain.md', 'structured-review-report.md', 'agent-security.md')) {
+foreach ($reference in @('language-hardening.md', 'static-quality-rules.md', 'policy-and-framework-guidance.md', 'api-and-data-safety.md', 'test-performance-and-supply-chain.md', 'structured-review-report.md', 'agent-security.md', 'ai-and-agent-code.md', 'standards-mapping.md')) {
     if ($skill -notmatch [regex]::Escape("references/$reference")) {
         throw "SKILL.md does not link to $reference."
     }

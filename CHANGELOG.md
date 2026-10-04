@@ -9,6 +9,11 @@ All notable changes to this package are recorded here. The format follows [Keep 
 - `scripts/profile-repository.sh`: a bash 3.2+ and POSIX awk port of the repository profiler for macOS, Linux, and Git Bash, with the same bounds, signals, and JSON shape as `profile-repository.ps1`. The PowerShell suite checks that both profilers report identical results. Both installers ship it, and `SKILL.md` offers both commands.
 - `scripts/sync-bash-installer.ps1` generates the bash installer's copy of the registry (version, tool list, editor ids, and both target tables). The validator runs it in check mode, so drift in any column now fails validation; before, only some columns were compared.
 - `.gitattributes` keeps shell scripts LF-only so they run from Windows checkouts.
+- `references/ai-and-agent-code.md`: rules for code that calls language models, builds prompts, retrieves context, or exposes tools and MCP servers to agents, tagged with OWASP LLM 2025 and Agentic 2026 identifiers. A matching `ai-application` policy profile.
+- `references/standards-mapping.md`: maps the skill's rule areas to OWASP Top 10:2025, CWE Top 25 (2025), OWASP LLM and Agentic Top 10, ASVS 5.0, NIST SSDF, SLSA v1.2, and WCAG 2.2.
+- The structured review report tags security findings with CWE and OWASP identifiers and can also be emitted as SARIF 2.1.0.
+- Supply-chain guidance covers verifying that new package names are real (typosquatting and "slopsquatting"), dependency confusion, lockfile integrity, SHA-pinned CI, provenance, and SBOMs.
+- The `frontend` profile requires WCAG 2.2 AA for changed UI and lists the success criteria added in 2.2.
 
 ### Changed
 

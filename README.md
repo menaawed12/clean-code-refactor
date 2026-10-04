@@ -20,12 +20,15 @@ For languages not listed above, the skill uses its universal rules, the reposito
 ## Advanced Capabilities
 
 - Local, read-only repository profiling to detect language, framework, configured checks, delivery assets, and high-risk change signals.
-- Policy profiles for strict, legacy-safe, API service, frontend, mobile, data, and infrastructure work.
+- Policy profiles for strict, legacy-safe, API service, frontend, mobile, data, infrastructure, and AI application work.
 - Change-impact analysis for public APIs, consumers, events, schemas, migrations, caches, and third-party integrations.
 - Framework-aware hardening for major web, backend, mobile, and infrastructure ecosystems.
 - Risk-based quality gates for authentication, authorization, secrets, payments, PII, public endpoints, migrations, concurrency, and delivery changes.
 - Test-quality, performance, resilience, dependency, license, artifact, and supply-chain review rules.
-- A severity-based, structured review report that records evidence, verification, exceptions, and residual risk.
+- A severity-based, structured review report that records evidence, verification, exceptions, and residual risk, with CWE and OWASP tags and optional SARIF 2.1.0 output for code-scanning tools.
+- AI application guidance: untrusted model input and output, per-call tool authorization, MCP server hardening, bounded agent loops and spend, and evaluation before prompt or model changes.
+- Current supply-chain checks, including verifying that new package names are real (typosquatting and "slopsquatting"), dependency confusion, SHA-pinned CI, provenance, and SBOMs.
+- WCAG 2.2 AA checks for changed UI.
 
 Profile a target repository before non-trivial work. The bash and PowerShell profilers report the same results, and the test suite checks that they agree:
 
@@ -46,6 +49,8 @@ bash ./scripts/profile-repository.sh --path /path/to/project
 - `references/api-and-data-safety.md` — API, schema, migration, query, event, cache, and integration safety rules.
 - `references/test-performance-and-supply-chain.md` — test quality, performance, resilience, and dependency guidance.
 - `references/structured-review-report.md` — severity-based review-report format.
+- `references/ai-and-agent-code.md` — rules for code that calls language models, builds prompts, retrieves context, or exposes tools and MCP servers to agents.
+- `references/standards-mapping.md` — maps findings to OWASP Top 10:2025, CWE Top 25 (2025), OWASP LLM and Agentic Top 10, ASVS 5.0, NIST SSDF, SLSA v1.2, and WCAG 2.2 identifiers.
 - `references/agent-security.md` — agent trust boundaries: untrusted repository content, tool-output injection, command discovery versus execution, and scoped permissions.
 - `integrations/registry.json` — machine-readable editor/agent target registry (single source of truth for installers).
 - `docs/ide-compatibility.md` — human-readable compatibility summary and roadmap.
