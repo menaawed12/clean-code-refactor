@@ -26,6 +26,7 @@ All notable changes to this package are recorded here. The format follows [Keep 
 - The PowerShell test suite no longer aborts on Linux and macOS while looking for Git Bash.
 - CI now fails on PSScriptAnalyzer warnings as well as errors. The fixes: test code no longer assigns to the automatic `$profile` variable, empty catch blocks now state their intent, internal functions use approved verbs and singular nouns, and `tests/run-tests.ps1` is saved with a UTF-8 BOM so Windows PowerShell 5.1 reads its Unicode test path correctly.
 - The Linux CI job no longer runs the bash suite twice.
+- Both test suites unset `XDG_CONFIG_HOME` before running, so user-scope install tests stay inside their redirected home on hosts that set it, such as GitHub's Ubuntu runners, instead of failing and writing to the real config directory.
 
 ## [1.1.0]
 

@@ -20,6 +20,10 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# The installer prefers XDG_CONFIG_HOME over -UserHome; clear it so user-scope tests
+# stay inside their redirected homes and never write to the host's real config.
+Remove-Item -Path Env:XDG_CONFIG_HOME -ErrorAction SilentlyContinue
 $repositoryRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $installer = Join-Path $repositoryRoot 'scripts/install.ps1'
 $validator = Join-Path $repositoryRoot 'scripts/validate-skill.ps1'

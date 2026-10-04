@@ -5,6 +5,10 @@
 # and Unicode paths, symlink containment, user scope with redirected homes, JSON output.
 set -u
 
+# The installer prefers XDG_CONFIG_HOME over --user-home; unset it so user-scope tests
+# stay inside their redirected homes and never write to the host's real config.
+unset XDG_CONFIG_HOME
+
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 installer="$repository_root/scripts/install.sh"
 
