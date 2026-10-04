@@ -2,6 +2,27 @@
 
 All notable changes to this package are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the package uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The version is defined once in `integrations/registry.json`; `scripts/validate-skill.ps1` fails if `SKILL.md`, `scripts/install.sh`, or this file disagree with it.
 
+## [1.3.0] - Unreleased
+
+### Added
+
+- `scripts/profile-repository.sh`: a bash 3.2+ and POSIX awk port of the repository profiler for macOS, Linux, and Git Bash, with the same bounds, signals, and JSON shape as `profile-repository.ps1`. The PowerShell suite checks that both profilers report identical results. Both installers ship it, and `SKILL.md` offers both commands.
+- `scripts/sync-bash-installer.ps1` generates the bash installer's copy of the registry (version, tool list, editor ids, and both target tables). The validator runs it in check mode, so drift in any column now fails validation; before, only some columns were compared.
+- `.gitattributes` keeps shell scripts LF-only so they run from Windows checkouts.
+
+### Changed
+
+- Registry schema version 2: `package.toolSources` lists every shipped tool script, replacing `profilerSource` and `ruleFileLayout.profilerFileName`.
+
+### Fixed
+
+- The PowerShell profiler emitted `null` for empty lists and a bare string for single-item lists instead of JSON arrays.
+- Both profilers reported a scan as complete when the file limit cut it short in the last directory walked.
+
+### Security
+
+- Neither profiler reads a symlinked manifest, so a repository cannot point the profiler at files outside it. Such files are reported as `symlinked manifest not read`.
+
 ## [1.2.0] - Unreleased
 
 ### Changed

@@ -41,4 +41,4 @@ The following families are planned or manual-workflow targets; none have declare
 - Browser/remote IDEs (Codespaces, Gitpod, code-server, cloud workspaces) — install inside the actual agent execution environment; remote hosts are separate installation contexts.
 - Terminal agents (Claude Code, Codex, Copilot CLI, OpenCode, Gemini CLI, Amazon Q, Aider) — covered where a native user-level destination is declared above.
 
-Additional IDEs can be added by extending `integrations/registry.json` and the installers' parity-checked target tables; `scripts/validate-skill.ps1` fails when the three drift apart.
+Additional IDEs can be added by extending `integrations/registry.json` and running `pwsh ./scripts/sync-bash-installer.ps1`. The PowerShell installer reads the registry directly; `scripts/validate-skill.ps1` fails if the bash installer's generated tables are out of date.

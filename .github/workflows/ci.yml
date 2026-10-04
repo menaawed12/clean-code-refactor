@@ -60,7 +60,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Lint shell (ShellCheck)
-        run: shellcheck scripts/install.sh tests/install.sh.tests.sh
+        run: shellcheck scripts/*.sh tests/*.sh
       - name: Bash installer behavioral tests
         run: bash tests/install.sh.tests.sh
       - name: PowerShell suite and validation (PowerShell 7)

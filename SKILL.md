@@ -2,10 +2,10 @@
 name: "clean-code-refactor"
 description: "Behavior-preserving refactoring, review remediation, and hardening for code in any major language. Use when asked to refactor, clean up, simplify, or review code; fix lint, static-analysis, or duplicate-code findings; extract responsibilities; or improve tests. Prevents security, reliability, and maintainability defects while preserving public contracts, authorization, data integrity, and existing project conventions."
 license: "MIT"
-compatibility: "Any Agent Skills-compatible coding agent with read access to the target repository. Running checks uses the project's own toolchain. Optional: PowerShell 7+ or Windows PowerShell 5.1 for scripts/profile-repository.ps1."
+compatibility: "Any Agent Skills-compatible coding agent with read access to the target repository. Running checks uses the project's own toolchain. The optional read-only profiler needs bash 3.2+ (scripts/profile-repository.sh) or PowerShell 5.1+ (scripts/profile-repository.ps1)."
 metadata:
   author: "Clean Code Refactor Skill"
-  version: "1.2.0"
+  version: "1.3.0"
 ---
 
 ## User Input
@@ -24,7 +24,7 @@ Make the smallest coherent change that improves readability, cohesion, testabili
 
 ## Repository Profile and Policy
 
-Start substantial work by reading the repository configuration or running `scripts/profile-repository.ps1 -Path <repository-root>`. The profiler is local and read-only; it identifies language, framework, check, delivery, and risk signals without running project commands or contacting external services.
+Start substantial work by reading the repository configuration or running the bundled profiler: `bash scripts/profile-repository.sh --path <repository-root>` on macOS, Linux, or Git Bash, or `scripts/profile-repository.ps1 -Path <repository-root>` in PowerShell. Both report the same results. The profiler is local and read-only; it identifies language, framework, check, delivery, and risk signals without running project commands or contacting external services.
 
 Select the narrowest applicable policy profile: **strict** for security-critical or new services; **legacy-safe** for incremental change in fragile systems; **api-service**, **frontend**, **mobile**, **data**, or **infrastructure** for domain-specific gates. Read [policy-and-framework-guidance.md](references/policy-and-framework-guidance.md) when selecting a profile or changing a supported framework.
 

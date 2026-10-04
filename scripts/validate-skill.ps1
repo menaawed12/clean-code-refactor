@@ -10,10 +10,11 @@
       - Every relative Markdown link in the package resolves to an existing file.
       - The rule-body path transformation is single-pass: no double prefixes, and every
         generated local link resolves against the package sources.
-      - integrations/registry.json parses, is internally consistent, and stays in parity
-        with both installers' embedded target tables (drift fails validation).
+      - integrations/registry.json parses and is internally consistent; the PowerShell
+        installer reads it directly and scripts/install.sh must match what
+        scripts/sync-bash-installer.ps1 generates from it (drift fails validation).
       - The package version is single-sourced in integrations/registry.json and matches
-        SKILL.md metadata, scripts/install.sh, and a CHANGELOG.md entry.
+        SKILL.md metadata and a CHANGELOG.md entry.
       - Installers declare the behavioral contract markers (dry-run, force, preflight).
 #>
 [CmdletBinding()]
@@ -45,6 +46,7 @@ $compatibilityDocPath = Join-Path $RepositoryRoot 'docs/ide-compatibility.md'
 $installerPath = Join-Path $RepositoryRoot 'scripts/install.ps1'
 $bashInstallerPath = Join-Path $RepositoryRoot 'scripts/install.sh'
 $profileScriptPath = Join-Path $RepositoryRoot 'scripts/profile-repository.ps1'
+$bashProfileScriptPath = Join-Path $RepositoryRoot 'scripts/profile-repository.sh'
 $psTestRunnerPath = Join-Path $RepositoryRoot 'tests/run-tests.ps1'
 $bashTestRunnerPath = Join-Path $RepositoryRoot 'tests/install.sh.tests.sh'
 $requiredHeadings = @(
@@ -56,7 +58,7 @@ $requiredHeadings = @(
     '## Completion Report'
 )
 
-foreach ($path in @($skillPath, $readmePath, $referencePath, $staticQualityRulesPath, $policyGuidancePath, $apiSafetyPath, $testSupplyChainPath, $reviewReportPath, $agentSecurityPath, $securityPolicyPath, $changelogPath, $registryPath, $compatibilityDocPath, $installerPath, $bashInstallerPath, $profileScriptPath, $psTestRunnerPath, $bashTestRunnerPath)) {
+foreach ($path in @($skillPath, $readmePath, $referencePath, $staticQualityRulesPath, $policyGuidancePath, $apiSafetyPath, $testSupplyChainPath, $reviewReportPath, $agentSecurityPath, $securityPolicyPath, $changelogPath, $registryPath, $compatibilityDocPath, $installerPath, $bashInstallerPath, $profileScriptPath, $bashProfileScriptPath, $psTestRunnerPath, $bashTestRunnerPath)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         throw "Required file is missing: $path"
     }
@@ -185,10 +187,6 @@ $packageVersion = Get-Prop $package 'version'
 if ($packageVersion -notmatch '^\d+\.\d+\.\d+$') { throw "Registry package version '$packageVersion' is not MAJOR.MINOR.PATCH." }
 if ($skillName -ne (Get-Prop $package 'name')) { throw "SKILL.md name '$skillName' does not match registry package name '$(Get-Prop $package 'name')'." }
 if ($skillMetadata['version'] -ne $packageVersion) { throw "SKILL.md metadata version '$($skillMetadata['version'])' does not match registry version '$packageVersion'." }
-$bashVersionMatch = [regex]::Match((Get-Content -LiteralPath $bashInstallerPath -Raw), "(?m)^PKG_VERSION='([^']*)'")
-if (-not $bashVersionMatch.Success -or $bashVersionMatch.Groups[1].Value -ne $packageVersion) {
-    throw "scripts/install.sh PKG_VERSION does not match registry version '$packageVersion'."
-}
 if ((Get-Content -LiteralPath $changelogPath -Raw) -notmatch ('(?m)^## \[' + [regex]::Escape($packageVersion) + '\]')) {
     throw "CHANGELOG.md has no '## [$packageVersion]' entry."
 }
@@ -196,10 +194,15 @@ if ((Get-Content -LiteralPath $changelogPath -Raw) -notmatch ('(?m)^## \[' + [re
 $layout = Get-Prop $registry 'ruleFileLayout'
 $referencesDirName = Get-Prop $layout 'referencesDirName'
 $toolsDirName = Get-Prop $layout 'toolsDirName'
-$profilerFileName = Get-Prop $layout 'profilerFileName'
+$toolSources = @(Get-Prop $package 'toolSources')
+if ($toolSources.Count -eq 0) { throw 'Registry package.toolSources must list the shipped tool scripts.' }
+foreach ($toolSource in $toolSources) {
+    if ($toolSource -notmatch '^scripts/[A-Za-z0-9._-]+$') { throw "Registry tool source '$toolSource' must be a file directly under scripts/." }
+    if (-not (Test-Path -LiteralPath (Join-Path $RepositoryRoot $toolSource) -PathType Leaf)) { throw "Registry tool source is missing: $toolSource" }
+}
 $body = $skill -replace '(?s)^---\r?\n.*?\r?\n---\r?\n?', ''
 $body = $body.Replace('references/', "$referencesDirName/")
-$body = $body.Replace('scripts/profile-repository.ps1', "$toolsDirName/$profilerFileName")
+foreach ($toolSource in $toolSources) { $body = $body.Replace($toolSource, "$toolsDirName/$(Split-Path -Leaf $toolSource)") }
 if ($body -match 'clean-code-refactor-clean-code-refactor') {
     throw 'Rule-body transformation produced a double-prefixed reference path.'
 }
@@ -209,8 +212,8 @@ foreach ($match in [regex]::Matches($body, [regex]::Escape("$referencesDirName/"
         throw "Generated rule would reference a missing package file: $referencesDirName/$($match.Groups[1].Value)"
     }
 }
-if ($body -match 'scripts/profile-repository\.ps1') {
-    throw 'Rule-body transformation did not rewrite the profiler path.'
+foreach ($toolSource in $toolSources) {
+    if ($body.Contains($toolSource)) { throw "Rule-body transformation did not rewrite the tool path $toolSource." }
 }
 
 # --------------------------- registry consistency --------------------------
@@ -218,11 +221,9 @@ if ($body -match 'scripts/profile-repository\.ps1') {
 $validRoots = @('project', 'codex-home', 'home', 'xdg-config')
 $validKinds = @('skill-folder', 'rule-file')
 $validFormats = @('plain', 'cursor', 'continue')
-$registryEditors = @()
 foreach ($property in (Get-Prop $registry 'editors').PSObject.Properties) {
     $id = $property.Name
     $definition = $property.Value
-    $registryEditors += $id
     $kind = Get-Prop $definition 'kind'
     if ($validKinds -notcontains $kind) { throw "Registry editor '$id' has invalid kind '$kind'." }
     $scopes = Get-Prop $definition 'scopes'
@@ -258,64 +259,11 @@ if ($installer -notmatch 'editors') {
     throw 'PowerShell installer does not read the registry editors collection.'
 }
 
-foreach ($id in $registryEditors) {
-    if ($bashInstaller -notmatch ("\b{0}\b" -f [regex]::Escape($id))) {
-        throw "Bash installer does not declare editor target: $id"
-    }
-}
-
-function Get-BashTargetTable {
-    param([string]$Text, [string]$TableName)
-    # Locate the heredoc block robustly.
-    $pattern = "(?s)$TableName=\`$\(\s*cat <<'$TableName" + "_EOF'\r?\n(.*?)\r?\n$TableName" + "_EOF\s*\)"
-    $match = [regex]::Match($Text, $pattern)
-    if (-not $match.Success) { throw "Bash installer target table '$TableName' is missing or malformed." }
-    return $match.Groups[1].Value
-}
-
-function ConvertTo-TargetMap {
-    param([string]$TableText)
-    $map = @{}
-    foreach ($line in ($TableText -split "`r?`n")) {
-        if ([string]::IsNullOrWhiteSpace($line)) { continue }
-        $columns = $line -split '\|'
-        if ($columns.Count -lt 11) { throw "Bash target row has too few columns: $line" }
-        $map[$columns[0]] = [pscustomobject]@{
-            id = $columns[0]; kind = $columns[1]; root = $columns[2]; path = $columns[3]
-            format = $columns[4]; verification = $columns[10]
-        }
-    }
-    return $map
-}
-
-$projectTable = ConvertTo-TargetMap -TableText (Get-BashTargetTable -Text $bashInstaller -TableName 'PROJECT_TARGETS')
-$userTable = ConvertTo-TargetMap -TableText (Get-BashTargetTable -Text $bashInstaller -TableName 'USER_TARGETS')
-
-foreach ($property in (Get-Prop $registry 'editors').PSObject.Properties) {
-    $id = $property.Name
-    $definition = $property.Value
-    foreach ($scopeName in @('project', 'user')) {
-        $scopeDef = Get-Prop (Get-Prop $definition 'scopes') $scopeName
-        $table = if ($scopeName -eq 'project') { $projectTable } else { $userTable }
-        if ($null -eq $scopeDef) {
-            if ($table.ContainsKey($id)) { throw "Bash installer declares a $scopeName target for '$id' that the registry does not." }
-            continue
-        }
-        if (-not $table.ContainsKey($id)) { throw "Bash installer is missing the $scopeName target for '$id'." }
-        $row = $table[$id]
-        $scopeKind = Get-Prop $scopeDef 'kind'
-        if (-not $scopeKind) { $scopeKind = Get-Prop $definition 'kind' }
-        $format = Get-Prop $scopeDef 'format'
-        if (-not $format) { $format = 'plain' }
-        $verification = Get-Prop $scopeDef 'verification'
-        if (-not $verification) { $verification = '-' }
-        if ($row.kind -ne $scopeKind) { throw "Kind mismatch for '$id' ($scopeName): registry '$scopeKind' vs bash '$($row.kind)'." }
-        if ($row.root -ne (Get-Prop $scopeDef 'root')) { throw "Root mismatch for '$id' ($scopeName)." }
-        if ($row.path -ne (Get-Prop $scopeDef 'path')) { throw "Path mismatch for '$id' ($scopeName): registry '$(Get-Prop $scopeDef 'path')' vs bash '$($row.path)'." }
-        if ($scopeKind -eq 'rule-file' -and $row.format -ne $format) { throw "Format mismatch for '$id' ($scopeName)." }
-        if ($row.verification -ne $verification) { throw "Verification marker mismatch for '$id' ($scopeName)." }
-    }
-}
+# The bash installer's copy of the registry (version, tool list, editor ids, and both
+# target tables) is generated by sync-bash-installer.ps1; any drift fails validation.
+$syncScript = Join-Path $RepositoryRoot 'scripts/sync-bash-installer.ps1'
+$syncOutput = & $syncScript -RepositoryRoot $RepositoryRoot -Check
+if ($LASTEXITCODE -ne 0) { throw ($syncOutput -join ' ') }
 
 # --------------------------- behavioral contract markers -------------------
 
@@ -332,6 +280,11 @@ foreach ($token in @('--dry-run', '--force', 'preflight', '--json', '--scope')) 
 foreach ($token in @('MaxFiles', 'MaxDepth', 'TimeoutSeconds', 'incompleteReason')) {
     if ((Get-Content -LiteralPath $profileScriptPath -Raw) -notmatch [regex]::Escape($token)) {
         throw "Profiler is missing required bounded-scan feature: $token"
+    }
+}
+foreach ($token in @('--max-files', '--max-depth', '--max-file-bytes', '--timeout-seconds', 'incompleteReason')) {
+    if ((Get-Content -LiteralPath $bashProfileScriptPath -Raw) -notmatch [regex]::Escape($token)) {
+        throw "Bash profiler is missing required bounded-scan feature: $token"
     }
 }
 

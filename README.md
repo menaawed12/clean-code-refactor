@@ -27,7 +27,11 @@ For languages not listed above, the skill uses its universal rules, the reposito
 - Test-quality, performance, resilience, dependency, license, artifact, and supply-chain review rules.
 - A severity-based, structured review report that records evidence, verification, exceptions, and residual risk.
 
-Profile a target repository before non-trivial work:
+Profile a target repository before non-trivial work. The bash and PowerShell profilers report the same results, and the test suite checks that they agree:
+
+```bash
+bash ./scripts/profile-repository.sh --path /path/to/project
+```
 
 ```powershell
 .\scripts\profile-repository.ps1 -Path C:\path\to\project
@@ -48,9 +52,10 @@ Profile a target repository before non-trivial work:
 - `SECURITY.md` — vulnerability reporting route and design commitments.
 - `CHANGELOG.md` — release history; the version itself lives in `integrations/registry.json`.
 - `scripts/validate-skill.ps1` — validates package structure, links, registry/installer parity, and required instructions.
+- `scripts/sync-bash-installer.ps1` — regenerates the bash installer's copy of the registry; run it after editing `integrations/registry.json`.
 - `scripts/install.ps1` — registry-driven installer (Windows PowerShell).
 - `scripts/install.sh` — registry-parity Bash installer for macOS and Linux.
-- `scripts/profile-repository.ps1` — bounded, read-only repository profiler with evidence and confidence reporting.
+- `scripts/profile-repository.ps1`, `scripts/profile-repository.sh` — bounded, read-only repository profilers (PowerShell and bash 3.2+) with evidence and confidence reporting. Neither follows symlinks or reads symlinked manifests.
 - `tests/run-tests.ps1`, `tests/install.sh.tests.sh` — behavioral installer test suites.
 
 ## Install
@@ -100,7 +105,7 @@ sha256sum --check --ignore-missing SHA256SUMS
 gh attestation verify clean-code-refactor-<version>.zip --repo menaawed12/clean-code-refactor
 ```
 
-Alternatively, download or transfer a reviewed copy of this repository, then copy `SKILL.md`, `references/`, and `scripts/profile-repository.ps1` to the editor location in the table below. For rule-based editors, use the PowerShell or Bash installer from the reviewed local copy to generate the required rule file and supporting folders. This supports environments without internet access or where installation scripts must be reviewed before use.
+Alternatively, download or transfer a reviewed copy of this repository, then copy `SKILL.md`, `references/`, `scripts/profile-repository.ps1`, and `scripts/profile-repository.sh` to the editor location in the table below. For rule-based editors, use the PowerShell or Bash installer from the reviewed local copy to generate the required rule file and supporting folders. This supports environments without internet access or where installation scripts must be reviewed before use.
 
 Supported editor integrations are declared in `integrations/registry.json` and summarized in [docs/ide-compatibility.md](docs/ide-compatibility.md). Both installers are validated against the registry; they cannot drift apart.
 
@@ -183,7 +188,7 @@ GitHub Actions CI (`.github/workflows/ci.yml`) runs validation on Windows PowerS
 
 ## Release
 
-1. Set the new version in `integrations/registry.json`, `SKILL.md` (`metadata.version`), and `scripts/install.sh` (`PKG_VERSION`); `scripts/validate-skill.ps1` fails until all three match.
+1. Set the new version in `integrations/registry.json` and `SKILL.md` (`metadata.version`), then run `pwsh ./scripts/sync-bash-installer.ps1` to carry it into `scripts/install.sh`. `scripts/validate-skill.ps1` fails until they all match.
 2. Add a dated `## [<version>] - YYYY-MM-DD` entry to `CHANGELOG.md`.
 3. Push a `v<version>` tag. `.github/workflows/release.yml` checks that the tag, registry, and changelog agree, validates the package, and publishes the release assets with checksums and provenance attestations.
 

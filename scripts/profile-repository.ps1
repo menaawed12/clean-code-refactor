@@ -202,7 +202,10 @@ while ($stack.Count -gt 0) {
             if ($current.Depth -ge $MaxDepth) { $stats.directoriesSkipped++; continue }
             $stack.Push([pscustomobject]@{ Dir = $entry.FullName; Depth = $current.Depth + 1 })
         } else {
-            if ($stats.scannedFiles -ge $MaxFiles) { break }
+            if ($stats.scannedFiles -ge $MaxFiles) {
+                $script:incompleteReason = "file inspection limit reached ($MaxFiles files)"
+                break
+            }
             $stats.scannedFiles++
             $relative = $entry.FullName.Substring($root.Length).TrimStart('\', '/').Replace('\', '/')
             $extension = $entry.Extension.ToLowerInvariant()
@@ -221,8 +224,13 @@ while ($stack.Count -gt 0) {
                     '^pubspec\.yaml$' { Add-Signal -Category 'language' -Value 'Dart/Flutter' -Confidence 'high' -EvidenceRelativePath $relative }
                 }
                 if ($entry.Name -in @('package.json', 'composer.json', 'Gemfile', 'pubspec.yaml', 'pyproject.toml')) {
-                    $manifestText = Read-BoundedText -FileFullName $entry.FullName
-                    Add-ManifestFramework -Name $entry.Name -Text $manifestText -Relative $relative
+                    if (($entry.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+                        # A symlinked manifest could point outside the repository; never read it.
+                        Add-Signal -Category 'note' -Value 'symlinked manifest not read' -Confidence 'info' -EvidenceRelativePath $relative
+                    } else {
+                        $manifestText = Read-BoundedText -FileFullName $entry.FullName
+                        Add-ManifestFramework -Name $entry.Name -Text $manifestText -Relative $relative
+                    }
                 }
             }
             if ($extension -in @('.sln', '.csproj', '.fsproj', '.vbproj')) { Add-Signal -Category 'language' -Value '.NET' -Confidence 'high' -EvidenceRelativePath $relative }
@@ -261,13 +269,14 @@ function Get-SignalValue {
     @($signals | Where-Object { $_.category -eq $Category } | Sort-Object value | ForEach-Object value)
 }
 
-$languages = Get-SignalValue -Category 'language'
-$frameworks = Get-SignalValue -Category 'framework'
-$checks = Get-SignalValue -Category 'check'
-$delivery = Get-SignalValue -Category 'delivery'
-$riskSignals = Get-SignalValue -Category 'riskSignals'
-$docHints = Get-SignalValue -Category 'documentationHints'
-$notes = Get-SignalValue -Category 'note'
+# @() keeps empty and single-item results as JSON arrays; function output is unrolled.
+$languages = @(Get-SignalValue -Category 'language')
+$frameworks = @(Get-SignalValue -Category 'framework')
+$checks = @(Get-SignalValue -Category 'check')
+$delivery = @(Get-SignalValue -Category 'delivery')
+$riskSignals = @(Get-SignalValue -Category 'riskSignals')
+$docHints = @(Get-SignalValue -Category 'documentationHints')
+$notes = @(Get-SignalValue -Category 'note')
 
 $complete = ($null -eq $script:incompleteReason)
 $profileSuggestion = if ($riskSignals.Count -gt 0) {
