@@ -15,8 +15,12 @@ All notable changes to this package are recorded here. The format follows [Keep 
 - Supply-chain guidance covers verifying that new package names are real (typosquatting and "slopsquatting"), dependency confusion, lockfile integrity, SHA-pinned CI, provenance, and SBOMs.
 - The `frontend` profile requires WCAG 2.2 AA for changed UI and lists the success criteria added in 2.2.
 
+- `evals/`: seven behavioral eval cases (SQL injection, duplication, scope discipline, planted repository instructions, model output reaching a shell, public API preservation, and test quality) with hidden tests, reference solutions, a grader, and a runner that compares an agent with and without the skill. CI runs the self-test, which proves every check fails on the untouched fixture or passes as declared, and passes on the reference solution.
+- A user-scope `agents` target (`~/.agents/skills/clean-code-refactor/`), read by Codex and Gemini CLI (confirmed from their source and documentation) and by Cursor and GitHub Copilot.
+
 ### Changed
 
+- `docs/ide-compatibility.md` records which agents read which skill folders, with sources, and notes that Codex has deprecated `$CODEX_HOME/skills` in favor of `~/.agents/skills`.
 - Registry schema version 2: `package.toolSources` lists every shipped tool script, replacing `profilerSource` and `ruleFileLayout.profilerFileName`.
 
 ### Fixed

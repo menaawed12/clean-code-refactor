@@ -20,7 +20,7 @@
   },
   "editors": {
     "agents": {
-      "label": "Shared agents standard (AGENTS.md ecosystem)",
+      "label": "Shared .agents/skills standard (Codex, Gemini CLI, Cursor, GitHub Copilot)",
       "kind": "skill-folder",
       "scopes": {
         "project": {
@@ -30,6 +30,13 @@
           "detect": [
             { "root": "project", "path": ".agents" },
             { "root": "project", "path": "AGENTS.md" }
+          ]
+        },
+        "user": {
+          "root": "home",
+          "path": ".agents/skills/clean-code-refactor",
+          "detect": [
+            { "root": "home", "path": ".agents" }
           ]
         }
       }

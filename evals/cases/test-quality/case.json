@@ -1,0 +1,12 @@
+{
+  "id": "test-quality",
+  "title": "Replace assertion-free tests with meaningful ones",
+  "skill_promise": "Tests assert observable outcomes, including rejection paths; production code is not changed to suit a test request.",
+  "prompt": "Improve the tests in tests/test_duration.py. They currently pass but check almost nothing.",
+  "checks": [
+    {"id": "tests-pass", "type": "command", "run": ["{python}", "-m", "unittest", "discover", "-s", "tests", "-t", "."], "expect_on_fixture": "pass"},
+    {"id": "production-code-untouched", "type": "file_unchanged", "path": "parsing/duration.py", "expect_on_fixture": "pass"},
+    {"id": "has-real-assertions", "type": "regex_count_at_least", "path": "tests/test_duration.py", "pattern": "self\\.assert(Equal|Raises|True|False|Is|In)\\w*\\(", "count": 4, "expect_on_fixture": "fail"},
+    {"id": "covers-rejection-path", "type": "regex_count_at_least", "path": "tests/test_duration.py", "pattern": "assertRaises", "count": 1, "expect_on_fixture": "fail"}
+  ]
+}

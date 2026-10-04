@@ -225,8 +225,9 @@ try {
     # ---------------------------------------------------------------- T12 user scope with redirected homes
     $fakeHome = New-TempDirectory; Register-Cleanup $fakeHome
     $fakeCodex = New-TempDirectory; Register-Cleanup $fakeCodex
-    $exitCode = Invoke-Installer -Arguments @('-Scope', 'user', '-Editor', 'claude,cursor,opencode,codex', '-UserHome', $fakeHome, '-CodexHome', $fakeCodex)
+    $exitCode = Invoke-Installer -Arguments @('-Scope', 'user', '-Editor', 'agents,claude,cursor,opencode,codex', '-UserHome', $fakeHome, '-CodexHome', $fakeCodex)
     Assert-True 'T12 user-scope installs exit 0' ($exitCode -eq 0)
+    Assert-True 'T12 shared .agents user skill installed' ((Test-Path -LiteralPath (Join-Path $fakeHome '.agents/skills/clean-code-refactor/SKILL.md')))
     Assert-True 'T12 claude user skill installed' ((Test-Path -LiteralPath (Join-Path $fakeHome '.claude/skills/clean-code-refactor/SKILL.md')))
     Assert-True 'T12 cursor user skill installed' ((Test-Path -LiteralPath (Join-Path $fakeHome '.cursor/skills/clean-code-refactor/SKILL.md')))
     Assert-True 'T12 opencode user skill installed' ((Test-Path -LiteralPath (Join-Path $fakeHome '.config/opencode/skills/clean-code-refactor/SKILL.md')))

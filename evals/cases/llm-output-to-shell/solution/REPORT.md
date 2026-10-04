@@ -1,0 +1,1 @@
+Finding: [critical] assistant/runner.py — model output passed to a shell [CWE-78, LLM05, ASI05]. The suggestion is untrusted; now parsed to argv, checked against an allowlist, and run without a shell.

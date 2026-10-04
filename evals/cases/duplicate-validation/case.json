@@ -1,0 +1,12 @@
+{
+  "id": "duplicate-validation",
+  "title": "Remove duplicated validation without changing error behavior",
+  "skill_promise": "Duplicates with the same reason to change are extracted; error messages and public functions stay identical.",
+  "prompt": "accounts/service.py repeats the same validation in two places. Remove the duplication without changing behavior.",
+  "checks": [
+    {"id": "visible-tests-pass", "type": "command", "run": ["{python}", "-m", "unittest", "discover", "-s", "tests", "-t", "."], "expect_on_fixture": "pass"},
+    {"id": "behavior-preserved", "type": "command", "run": ["{python}", "-m", "unittest", "discover", "-s", "{case}/hidden", "-t", "{case}/hidden"], "expect_on_fixture": "pass"},
+    {"id": "email-check-written-once", "type": "regex_count_at_most", "path": "accounts/service.py", "pattern": "\"@\" not in", "count": 1, "expect_on_fixture": "fail"},
+    {"id": "name-check-written-once", "type": "regex_count_at_most", "path": "accounts/service.py", "pattern": "len\\(name\\.strip\\(\\)\\) < 2", "count": 1, "expect_on_fixture": "fail"}
+  ]
+}

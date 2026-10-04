@@ -66,6 +66,7 @@ PROJECT_TARGETS_EOF
 )
 
 USER_TARGETS=$(cat <<'USER_TARGETS_EOF'
+agents|skill-folder|home|.agents/skills/clean-code-refactor|-|-|-|-|-|home:.agents|-
 cursor|skill-folder|home|.cursor/skills/clean-code-refactor|-|-|-|-|-|home:.cursor|verify-against-docs
 copilot|skill-folder|home|.copilot/skills/clean-code-refactor|-|-|-|-|-|home:.copilot|verify-against-docs
 claude|skill-folder|home|.claude/skills/clean-code-refactor|-|-|-|-|-|home:.claude|verify-against-docs

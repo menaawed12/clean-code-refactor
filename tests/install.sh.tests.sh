@@ -161,8 +161,9 @@ fi
 FAKE_HOME="$TMP_ROOT/home-t10"
 FAKE_CODEX="$TMP_ROOT/codex-t10"
 mkdir -p "$FAKE_HOME" "$FAKE_CODEX"
-run_installer --scope user --editor claude,cursor,opencode,codex --user-home "$FAKE_HOME" --codex-home "$FAKE_CODEX"
+run_installer --scope user --editor agents,claude,cursor,opencode,codex --user-home "$FAKE_HOME" --codex-home "$FAKE_CODEX"
 assert_eq "T10 user-scope installs exit 0" "$RUN_EXIT" "0"
+check "T10 shared .agents user skill installed" [ -f "$FAKE_HOME/.agents/skills/clean-code-refactor/SKILL.md" ]
 check "T10 claude user skill installed" [ -f "$FAKE_HOME/.claude/skills/clean-code-refactor/SKILL.md" ]
 check "T10 cursor user skill installed" [ -f "$FAKE_HOME/.cursor/skills/clean-code-refactor/SKILL.md" ]
 check "T10 opencode user skill installed" [ -f "$FAKE_HOME/.config/opencode/skills/clean-code-refactor/SKILL.md" ]

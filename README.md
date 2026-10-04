@@ -62,6 +62,7 @@ bash ./scripts/profile-repository.sh --path /path/to/project
 - `scripts/install.sh` — registry-parity Bash installer for macOS and Linux.
 - `scripts/profile-repository.ps1`, `scripts/profile-repository.sh` — bounded, read-only repository profilers (PowerShell and bash 3.2+) with evidence and confidence reporting. Neither follows symlinks or reads symlinked manifests.
 - `tests/run-tests.ps1`, `tests/install.sh.tests.sh` — behavioral installer test suites.
+- `evals/` — behavioral evals that measure whether an agent does better work with the skill than without it; see [evals/README.md](evals/README.md).
 
 ## Install
 
@@ -120,7 +121,7 @@ Supported editor integrations are declared in `integrations/registry.json` and s
 | GitHub Copilot | `.github/skills/clean-code-refactor/` plus `.github/copilot-instructions.md` pointer for editor-wide support |
 | Claude Code | `.claude/skills/clean-code-refactor/` |
 | Codex | `$CODEX_HOME/skills/clean-code-refactor/` or `~/.codex/skills/clean-code-refactor/` |
-| Shared agent standard | `.agents/skills/clean-code-refactor/` plus a root `AGENTS.md` pointer |
+| Shared agent standard (read by Codex, Gemini CLI, Cursor, and GitHub Copilot) | `.agents/skills/clean-code-refactor/` plus a root `AGENTS.md` pointer; user scope `~/.agents/skills/clean-code-refactor/` |
 | Windsurf | `.windsurf/rules/clean-code-refactor.md` |
 | Cline | `.clinerules/clean-code-refactor.md` |
 | Roo Code | `.roo/rules/clean-code-refactor.md` |
@@ -151,7 +152,7 @@ bash ./scripts/install.sh --editor codex   # user-scoped by default
 - **Exit codes:** `0` success (intentional skips allowed), `1` one or more targets failed, `2` usage or preflight error. Preflight failures abort before anything is written.
 - **Upgrades:** installs record a `.clean-code-refactor-install.json` receipt with version and file hashes. A re-run updates owned files, removes files the package no longer ships (including nested leftovers), and preserves unrelated files. Without `-Force`/`--force` your modifications to owned files are detected and preserved; use force to overwrite.
 - **Safety:** destinations must resolve inside the declared root; symlinked or junctioned path components are refused, and a failed preflight leaves the filesystem untouched.
-- **User scope:** available where the registry declares it (GitHub Copilot, Claude Code, Cursor, OpenCode, Codex). Redirect homes with `-UserHome`/`--user-home` (and `-CodexHome`/`--codex-home`) for tests or portable installs. Destinations marked `verify-against-docs` should be confirmed against your installed editor's documentation. Global availability never implies automatic execution or elevated privileges.
+- **User scope:** available where the registry declares it (the shared `agents` standard, GitHub Copilot, Claude Code, Cursor, OpenCode, Codex). For most setups, `--scope user --editor agents` plus your agent's own target is enough; see [docs/ide-compatibility.md](docs/ide-compatibility.md) for which agents read which folders. Redirect homes with `-UserHome`/`--user-home` (and `-CodexHome`/`--codex-home`) for tests or portable installs. Destinations marked `verify-against-docs` should be confirmed against your installed editor's documentation. Global availability never implies automatic execution or elevated privileges.
 
 Use `-Force` or `--force` only when replacing this skill's previously installed files. The installers never overwrite unrelated instructions.
 

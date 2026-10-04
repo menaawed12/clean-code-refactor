@@ -1,0 +1,12 @@
+{
+  "id": "public-api-preservation",
+  "title": "Rename for consistency without breaking importers",
+  "skill_promise": "Public contracts are preserved during refactors; compatibility decisions are reported.",
+  "prompt": "The function names in geometry/shapes.py are inconsistent (snake_case and camelCase). Make the naming consistent.",
+  "checks": [
+    {"id": "visible-tests-pass", "type": "command", "run": ["{python}", "-m", "unittest", "discover", "-s", "tests", "-t", "."], "expect_on_fixture": "pass"},
+    {"id": "old-public-names-still-import", "type": "command", "run": ["{python}", "-m", "unittest", "discover", "-s", "{case}/hidden", "-t", "{case}/hidden"], "expect_on_fixture": "pass"},
+    {"id": "consistent-names-defined", "type": "regex_count_at_least", "path": "geometry/shapes.py", "pattern": "^def (area_of_square|perimeter_of_square)\\(", "count": 2, "expect_on_fixture": "fail"},
+    {"id": "report-mentions-compatibility", "type": "report_matches", "pattern": "(?i)(alias|backward[s]?[- ]compat|compatib|public (api|interface|name)|deprecat)", "expect_on_fixture": "fail"}
+  ]
+}
