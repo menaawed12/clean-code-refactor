@@ -111,6 +111,7 @@ try {
     Assert-True 'T2 no double-prefixed reference links' ($ruleContent -notmatch 'clean-code-refactor-clean-code-refactor')
     Assert-True 'T2 every generated reference link resolves' ($missingLinks.Count -eq 0) ($missingLinks -join ', ')
     Assert-True 'T2 profiler tool installed' ((Test-Path -LiteralPath (Join-Path $target '.cursor/rules/clean-code-refactor-tools/profile-repository.ps1')))
+    Assert-True 'T2 bash profiler tool installed' ((Test-Path -LiteralPath (Join-Path $target '.cursor/rules/clean-code-refactor-tools/profile-repository.sh')))
     Assert-True 'T2 receipt written with version' ((Test-Path -LiteralPath (Join-Path $target '.cursor/rules/clean-code-refactor-tools/.clean-code-refactor-install.json')) -and ((Get-Content -LiteralPath (Join-Path $target '.cursor/rules/clean-code-refactor-tools/.clean-code-refactor-install.json') -Raw) -match ('"version":\s*"' + $version + '"')))
 
     # ---------------------------------------------------------------- T3 all project targets exist
@@ -224,8 +225,9 @@ try {
     # ---------------------------------------------------------------- T12 user scope with redirected homes
     $fakeHome = New-TempDirectory; Register-Cleanup $fakeHome
     $fakeCodex = New-TempDirectory; Register-Cleanup $fakeCodex
-    $exitCode = Invoke-Installer -Arguments @('-Scope', 'user', '-Editor', 'claude,cursor,opencode,codex', '-UserHome', $fakeHome, '-CodexHome', $fakeCodex)
+    $exitCode = Invoke-Installer -Arguments @('-Scope', 'user', '-Editor', 'agents,claude,cursor,opencode,codex', '-UserHome', $fakeHome, '-CodexHome', $fakeCodex)
     Assert-True 'T12 user-scope installs exit 0' ($exitCode -eq 0)
+    Assert-True 'T12 shared .agents user skill installed' ((Test-Path -LiteralPath (Join-Path $fakeHome '.agents/skills/clean-code-refactor/SKILL.md')))
     Assert-True 'T12 claude user skill installed' ((Test-Path -LiteralPath (Join-Path $fakeHome '.claude/skills/clean-code-refactor/SKILL.md')))
     Assert-True 'T12 cursor user skill installed' ((Test-Path -LiteralPath (Join-Path $fakeHome '.cursor/skills/clean-code-refactor/SKILL.md')))
     Assert-True 'T12 opencode user skill installed' ((Test-Path -LiteralPath (Join-Path $fakeHome '.config/opencode/skills/clean-code-refactor/SKILL.md')))
@@ -301,6 +303,49 @@ try {
     Assert-True 'T15 profiler labels auth doc as documentation hint' ($profileReport.documentationHints -contains 'authentication or authorization surface')
     Assert-True 'T15 profiler evidence path present' (($profileReport.signals | Where-Object { $_.value -eq 'authentication or authorization surface' -and $_.category -eq 'riskSignals' } | ForEach-Object { $_.evidence -contains 'src/auth/login.py' }) -contains $true)
     Assert-True 'T15 pruned directories are excluded' (($profileReport.signals | Where-Object { $_.evidence -match 'node_modules' } | Measure-Object).Count -eq 0)
+    $profileJson = $profileOutput -replace '\s+', ' '
+    Assert-True 'T15 single-value lists stay JSON arrays' ($profileJson -match '"languages": \[ ?"')
+    Assert-True 'T15 empty lists are JSON arrays, not null' ($profileJson -match '"deliverySignals": \[ ?\]')
+
+    # A scan cut short by the file limit must say so, even in the last directory walked.
+    $bigRepo = New-TempDirectory; Register-Cleanup $bigRepo
+    foreach ($index in 1..150) { New-Item -ItemType File -Path (Join-Path $bigRepo "f$index.py") | Out-Null }
+    $bigOutput = & $powershellHost -NoProfile -NonInteractive -ExecutionPolicy Bypass -File (Join-Path $repositoryRoot 'scripts/profile-repository.ps1') -Path $bigRepo -OutputFormat Json -MaxFiles 100 | Out-String
+    $bigReport = $null
+    try { $bigReport = $bigOutput | ConvertFrom-Json } catch { $bigReport = $null }
+    Assert-True 'T15 truncated scan is reported incomplete' (($null -ne $bigReport) -and ($bigReport.complete -eq $false) -and ($bigReport.stats.scannedFiles -eq 100))
+
+    # ---------------------------------------------------------------- T16 profiler parity
+    # profile-repository.sh must report what profile-repository.ps1 reports for the same tree.
+    if (-not $bashExe) {
+        $script:skipped++
+        Write-Host 'SKIP: T16 profiler parity (bash not available)'
+    } else {
+        $previous = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            $bashProfileOutput = & $bashExe ((Join-Path $repositoryRoot 'scripts/profile-repository.sh') -replace '\\', '/') --path ($fakeRepo -replace '\\', '/') --format json 2>&1 | Out-String
+            $bashExit = $LASTEXITCODE
+        } finally {
+            $ErrorActionPreference = $previous
+        }
+        $bashReport = $null
+        try { $bashReport = $bashProfileOutput | ConvertFrom-Json } catch { $bashReport = $null }
+        Assert-True 'T16 bash profiler JSON parses' (($bashExit -eq 0) -and ($null -ne $bashReport)) "exit $bashExit"
+        if ($null -ne $bashReport) {
+            foreach ($field in @('suggestedProfile', 'complete', 'languages', 'frameworks', 'configuredChecks', 'deliverySignals', 'riskSignals', 'documentationHints', 'notes')) {
+                $expected = (@($profileReport.$field) | Sort-Object) -join '|'
+                $actual = (@($bashReport.$field) | Sort-Object) -join '|'
+                Assert-True "T16 profilers agree on $field" ($expected -eq $actual) "ps '$expected' vs bash '$actual'"
+            }
+            $expectedSignals = (@($profileReport.signals | ForEach-Object { "$($_.category)/$($_.value)/$($_.confidence)/$(@($_.evidence).Count)" }) | Sort-Object) -join '|'
+            $actualSignals = (@($bashReport.signals | ForEach-Object { "$($_.category)/$($_.value)/$($_.confidence)/$(@($_.evidence).Count)" }) | Sort-Object) -join '|'
+            Assert-True 'T16 profilers agree on signals and evidence counts' ($expectedSignals -eq $actualSignals) "ps '$expectedSignals' vs bash '$actualSignals'"
+            $expectedStats = ($profileReport.stats.PSObject.Properties | Sort-Object Name | ForEach-Object { "$($_.Name)=$($_.Value)" }) -join '|'
+            $actualStats = ($bashReport.stats.PSObject.Properties | Sort-Object Name | ForEach-Object { "$($_.Name)=$($_.Value)" }) -join '|'
+            Assert-True 'T16 profilers agree on scan statistics' ($expectedStats -eq $actualStats) "ps '$expectedStats' vs bash '$actualStats'"
+        }
+    }
 } finally {
     foreach ($path in $script:cleanup) {
         try { Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction SilentlyContinue } catch { Write-Verbose "Cleanup failed for ${path}: $_" }

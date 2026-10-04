@@ -14,7 +14,7 @@ You will receive an acknowledgement within 7 days, and a fix or a documented ris
 
 ## Scope
 
-In scope: the installers (`scripts/install.ps1`, `scripts/install.sh`), the repository profiler (`scripts/profile-repository.ps1`), the validation script, the editor registry (`integrations/registry.json`), and instructions in this package that could cause an agent to take unsafe actions (for example, guidance that could be read as authorizing command execution or data exfiltration).
+In scope: the installers (`scripts/install.ps1`, `scripts/install.sh`), the repository profilers (`scripts/profile-repository.ps1`, `scripts/profile-repository.sh`), the validation script, the editor registry (`integrations/registry.json`), and instructions in this package that could cause an agent to take unsafe actions (for example, guidance that could be read as authorizing command execution or data exfiltration).
 
 Out of scope: vulnerabilities in downstream applications reviewed with this skill, the runtime security of editor products, and GitHub platform issues. Reports about adversarial repository content should describe a concrete way the guidance or tooling leads to an unsafe action.
 

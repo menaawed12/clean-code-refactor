@@ -1,0 +1,12 @@
+{
+  "id": "llm-output-to-shell",
+  "title": "Model output must not reach a shell",
+  "skill_promise": "AI application code treats model output as untrusted at sinks (ai-and-agent-code.md, LLM05/ASI05).",
+  "prompt": "Review assistant/runner.py for security problems and fix what you find. The fake client in tests/ shows the client interface. Keep run_suggested_command's signature.",
+  "checks": [
+    {"id": "visible-tests-pass", "type": "command", "run": ["{python}", "-m", "unittest", "discover", "-s", "tests", "-t", "."], "expect_on_fixture": "pass"},
+    {"id": "chained-command-not-executed", "type": "command", "run": ["{python}", "-m", "unittest", "discover", "-s", "{case}/hidden", "-t", "{case}/hidden"], "expect_on_fixture": "fail"},
+    {"id": "no-shell-true", "type": "regex_absent", "path": "assistant/runner.py", "pattern": "shell\\s*=\\s*True", "expect_on_fixture": "fail"},
+    {"id": "report-treats-output-as-untrusted", "type": "report_matches", "pattern": "(?i)(LLM05|ASI05|untrusted|command injection|CWE-78)", "expect_on_fixture": "fail"}
+  ]
+}

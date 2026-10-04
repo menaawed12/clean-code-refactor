@@ -60,12 +60,16 @@ jobs:
         with:
           persist-credentials: false
       - name: Lint shell (ShellCheck)
-        run: shellcheck scripts/install.sh tests/install.sh.tests.sh
+        run: shellcheck scripts/*.sh tests/*.sh
       - name: Bash installer behavioral tests
         run: bash tests/install.sh.tests.sh
       - name: PowerShell suite and validation (PowerShell 7)
         shell: pwsh
         run: ./tests/run-tests.ps1 -SkipBash
+      - name: Eval self-test (every check is meaningful)
+        run: python3 evals/grade.py self-test
+      - name: Eval runner smoke test (no-op agent)
+        run: python3 evals/run_evals.py --agent-cmd 'cat {prompt_file}' --cases sql-injection-refactor --out "$RUNNER_TEMP/eval-smoke"
 
   macos:
     runs-on: macos-latest

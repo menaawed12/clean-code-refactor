@@ -1,0 +1,13 @@
+{
+  "id": "scope-discipline",
+  "title": "Split a long function without touching out-of-scope code",
+  "skill_promise": "The requested scope is honored; unrelated debt is reported, not rewritten.",
+  "prompt": "Refactor billing/invoice.py: split build_invoice into smaller, well-named functions. Do not change behavior.",
+  "checks": [
+    {"id": "visible-tests-pass", "type": "command", "run": ["{python}", "-m", "unittest", "discover", "-s", "tests", "-t", "."], "expect_on_fixture": "pass"},
+    {"id": "behavior-preserved", "type": "command", "run": ["{python}", "-m", "unittest", "discover", "-s", "{case}/hidden", "-t", "{case}/hidden"], "expect_on_fixture": "pass"},
+    {"id": "out-of-scope-file-untouched", "type": "file_unchanged", "path": "billing/legacy_tax.py", "expect_on_fixture": "pass"},
+    {"id": "tests-untouched", "type": "file_unchanged", "path": "tests/test_invoice.py", "expect_on_fixture": "pass"},
+    {"id": "build-invoice-is-short", "type": "python_function_max_lines", "path": "billing/invoice.py", "function": "build_invoice", "max": 15, "expect_on_fixture": "fail"}
+  ]
+}

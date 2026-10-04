@@ -20,14 +20,21 @@ For languages not listed above, the skill uses its universal rules, the reposito
 ## Advanced Capabilities
 
 - Local, read-only repository profiling to detect language, framework, configured checks, delivery assets, and high-risk change signals.
-- Policy profiles for strict, legacy-safe, API service, frontend, mobile, data, and infrastructure work.
+- Policy profiles for strict, legacy-safe, API service, frontend, mobile, data, infrastructure, and AI application work.
 - Change-impact analysis for public APIs, consumers, events, schemas, migrations, caches, and third-party integrations.
 - Framework-aware hardening for major web, backend, mobile, and infrastructure ecosystems.
 - Risk-based quality gates for authentication, authorization, secrets, payments, PII, public endpoints, migrations, concurrency, and delivery changes.
 - Test-quality, performance, resilience, dependency, license, artifact, and supply-chain review rules.
-- A severity-based, structured review report that records evidence, verification, exceptions, and residual risk.
+- A severity-based, structured review report that records evidence, verification, exceptions, and residual risk, with CWE and OWASP tags and optional SARIF 2.1.0 output for code-scanning tools.
+- AI application guidance: untrusted model input and output, per-call tool authorization, MCP server hardening, bounded agent loops and spend, and evaluation before prompt or model changes.
+- Current supply-chain checks, including verifying that new package names are real (typosquatting and "slopsquatting"), dependency confusion, SHA-pinned CI, provenance, and SBOMs.
+- WCAG 2.2 AA checks for changed UI.
 
-Profile a target repository before non-trivial work:
+Profile a target repository before non-trivial work. The bash and PowerShell profilers report the same results, and the test suite checks that they agree:
+
+```bash
+bash ./scripts/profile-repository.sh --path /path/to/project
+```
 
 ```powershell
 .\scripts\profile-repository.ps1 -Path C:\path\to\project
@@ -42,16 +49,20 @@ Profile a target repository before non-trivial work:
 - `references/api-and-data-safety.md` — API, schema, migration, query, event, cache, and integration safety rules.
 - `references/test-performance-and-supply-chain.md` — test quality, performance, resilience, and dependency guidance.
 - `references/structured-review-report.md` — severity-based review-report format.
+- `references/ai-and-agent-code.md` — rules for code that calls language models, builds prompts, retrieves context, or exposes tools and MCP servers to agents.
+- `references/standards-mapping.md` — maps findings to OWASP Top 10:2025, CWE Top 25 (2025), OWASP LLM and Agentic Top 10, ASVS 5.0, NIST SSDF, SLSA v1.2, and WCAG 2.2 identifiers.
 - `references/agent-security.md` — agent trust boundaries: untrusted repository content, tool-output injection, command discovery versus execution, and scoped permissions.
 - `integrations/registry.json` — machine-readable editor/agent target registry (single source of truth for installers).
 - `docs/ide-compatibility.md` — human-readable compatibility summary and roadmap.
 - `SECURITY.md` — vulnerability reporting route and design commitments.
 - `CHANGELOG.md` — release history; the version itself lives in `integrations/registry.json`.
 - `scripts/validate-skill.ps1` — validates package structure, links, registry/installer parity, and required instructions.
+- `scripts/sync-bash-installer.ps1` — regenerates the bash installer's copy of the registry; run it after editing `integrations/registry.json`.
 - `scripts/install.ps1` — registry-driven installer (Windows PowerShell).
 - `scripts/install.sh` — registry-parity Bash installer for macOS and Linux.
-- `scripts/profile-repository.ps1` — bounded, read-only repository profiler with evidence and confidence reporting.
+- `scripts/profile-repository.ps1`, `scripts/profile-repository.sh` — bounded, read-only repository profilers (PowerShell and bash 3.2+) with evidence and confidence reporting. Neither follows symlinks or reads symlinked manifests.
 - `tests/run-tests.ps1`, `tests/install.sh.tests.sh` — behavioral installer test suites.
+- `evals/` — behavioral evals that measure whether an agent does better work with the skill than without it; see [evals/README.md](evals/README.md).
 
 ## Install
 
@@ -100,7 +111,7 @@ sha256sum --check --ignore-missing SHA256SUMS
 gh attestation verify clean-code-refactor-<version>.zip --repo menaawed12/clean-code-refactor
 ```
 
-Alternatively, download or transfer a reviewed copy of this repository, then copy `SKILL.md`, `references/`, and `scripts/profile-repository.ps1` to the editor location in the table below. For rule-based editors, use the PowerShell or Bash installer from the reviewed local copy to generate the required rule file and supporting folders. This supports environments without internet access or where installation scripts must be reviewed before use.
+Alternatively, download or transfer a reviewed copy of this repository, then copy `SKILL.md`, `references/`, `scripts/profile-repository.ps1`, and `scripts/profile-repository.sh` to the editor location in the table below. For rule-based editors, use the PowerShell or Bash installer from the reviewed local copy to generate the required rule file and supporting folders. This supports environments without internet access or where installation scripts must be reviewed before use.
 
 Supported editor integrations are declared in `integrations/registry.json` and summarized in [docs/ide-compatibility.md](docs/ide-compatibility.md). Both installers are validated against the registry; they cannot drift apart.
 
@@ -110,7 +121,7 @@ Supported editor integrations are declared in `integrations/registry.json` and s
 | GitHub Copilot | `.github/skills/clean-code-refactor/` plus `.github/copilot-instructions.md` pointer for editor-wide support |
 | Claude Code | `.claude/skills/clean-code-refactor/` |
 | Codex | `$CODEX_HOME/skills/clean-code-refactor/` or `~/.codex/skills/clean-code-refactor/` |
-| Shared agent standard | `.agents/skills/clean-code-refactor/` plus a root `AGENTS.md` pointer |
+| Shared agent standard (read by Codex, Gemini CLI, Cursor, and GitHub Copilot) | `.agents/skills/clean-code-refactor/` plus a root `AGENTS.md` pointer; user scope `~/.agents/skills/clean-code-refactor/` |
 | Windsurf | `.windsurf/rules/clean-code-refactor.md` |
 | Cline | `.clinerules/clean-code-refactor.md` |
 | Roo Code | `.roo/rules/clean-code-refactor.md` |
@@ -141,7 +152,7 @@ bash ./scripts/install.sh --editor codex   # user-scoped by default
 - **Exit codes:** `0` success (intentional skips allowed), `1` one or more targets failed, `2` usage or preflight error. Preflight failures abort before anything is written.
 - **Upgrades:** installs record a `.clean-code-refactor-install.json` receipt with version and file hashes. A re-run updates owned files, removes files the package no longer ships (including nested leftovers), and preserves unrelated files. Without `-Force`/`--force` your modifications to owned files are detected and preserved; use force to overwrite.
 - **Safety:** destinations must resolve inside the declared root; symlinked or junctioned path components are refused, and a failed preflight leaves the filesystem untouched.
-- **User scope:** available where the registry declares it (GitHub Copilot, Claude Code, Cursor, OpenCode, Codex). Redirect homes with `-UserHome`/`--user-home` (and `-CodexHome`/`--codex-home`) for tests or portable installs. Destinations marked `verify-against-docs` should be confirmed against your installed editor's documentation. Global availability never implies automatic execution or elevated privileges.
+- **User scope:** available where the registry declares it (the shared `agents` standard, GitHub Copilot, Claude Code, Cursor, OpenCode, Codex). For most setups, `--scope user --editor agents` plus your agent's own target is enough; see [docs/ide-compatibility.md](docs/ide-compatibility.md) for which agents read which folders. Redirect homes with `-UserHome`/`--user-home` (and `-CodexHome`/`--codex-home`) for tests or portable installs. Destinations marked `verify-against-docs` should be confirmed against your installed editor's documentation. Global availability never implies automatic execution or elevated privileges.
 
 Use `-Force` or `--force` only when replacing this skill's previously installed files. The installers never overwrite unrelated instructions.
 
@@ -183,7 +194,7 @@ GitHub Actions CI (`.github/workflows/ci.yml`) runs validation on Windows PowerS
 
 ## Release
 
-1. Set the new version in `integrations/registry.json`, `SKILL.md` (`metadata.version`), and `scripts/install.sh` (`PKG_VERSION`); `scripts/validate-skill.ps1` fails until all three match.
+1. Set the new version in `integrations/registry.json` and `SKILL.md` (`metadata.version`), then run `pwsh ./scripts/sync-bash-installer.ps1` to carry it into `scripts/install.sh`. `scripts/validate-skill.ps1` fails until they all match.
 2. Add a dated `## [<version>] - YYYY-MM-DD` entry to `CHANGELOG.md`.
 3. Push a `v<version>` tag. `.github/workflows/release.yml` checks that the tag, registry, and changelog agree, validates the package, and publishes the release assets with checksums and provenance attestations.
 

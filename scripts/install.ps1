@@ -191,13 +191,15 @@ function Get-DirectoryFileMap {
 
 function Get-SourceFileMap {
     # Canonical owned files: [relative path] -> sha256, computed from the package sources.
-    param($Package, [string]$SkillSource, [string]$ReferenceDir, [string]$ProfilerSource)
+    param($Package, [string]$SkillSource, [string]$ReferenceDir, [string]$RepositoryRoot)
     $map = @{}
     $map[(Get-Prop $Package 'canonicalSkillFile')] = Get-FileSha256 -PathValue $SkillSource
     foreach ($entry in (Get-DirectoryFileMap -Directory $ReferenceDir).GetEnumerator()) {
         $map["$((Get-Prop $Package 'referenceDir'))/$($entry.Key)"] = $entry.Value
     }
-    $map[(Get-Prop $Package 'profilerSource')] = Get-FileSha256 -PathValue $ProfilerSource
+    foreach ($toolSource in @(Get-Prop $Package 'toolSources')) {
+        $map[$toolSource] = Get-FileSha256 -PathValue (Join-UnderRoot -Root $RepositoryRoot -RelativePath $toolSource)
+    }
     return $map
 }
 
@@ -301,18 +303,23 @@ function Sync-MirroredDirectory {
 function Get-RuleBody {
     <#
         Single-pass transformation of the canonical skill body (fixes the double-prefix bug):
-        'references/' is rewritten exactly once, then the profiler path. Generated local links
+        'references/' is rewritten exactly once, then each tool path. Generated local links
         are validated against the package sources before anything is written.
     #>
-    param($Registry, [string]$SkillText, [string]$ReferenceDir, [string]$ProfilerSource)
+    param($Registry, [string]$SkillText, [string]$ReferenceDir, [string]$RepositoryRoot)
     $layout = Get-Prop $Registry 'ruleFileLayout'
     $referencesDirName = Get-Prop $layout 'referencesDirName'
     $toolsDirName = Get-Prop $layout 'toolsDirName'
-    $profilerFileName = Get-Prop $layout 'profilerFileName'
 
     $body = $SkillText -replace '(?s)^---\r?\n.*?\r?\n---\r?\n?', ''
     $body = $body.Replace('references/', "$referencesDirName/")
-    $body = $body.Replace('scripts/profile-repository.ps1', "$toolsDirName/$profilerFileName")
+    foreach ($toolSource in @(Get-Prop (Get-Prop $Registry 'package') 'toolSources')) {
+        $toolLink = "$toolsDirName/$(Split-Path -Leaf $toolSource)"
+        $body = $body.Replace($toolSource, $toolLink)
+        if ($body.Contains($toolLink) -and -not (Test-Path -LiteralPath (Join-UnderRoot -Root $RepositoryRoot -RelativePath $toolSource) -PathType Leaf)) {
+            throw "Generated rule references missing package file: $toolLink"
+        }
+    }
 
     # Validate every generated local link resolves to a real package file.
     foreach ($match in [regex]::Matches($body, [regex]::Escape("$referencesDirName/") + '([A-Za-z0-9][A-Za-z0-9._/-]*)')) {
@@ -320,10 +327,6 @@ function Get-RuleBody {
         if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
             throw "Generated rule references missing package file: $referencesDirName/$($match.Groups[1].Value)"
         }
-    }
-    $toolLink = "$toolsDirName/$profilerFileName"
-    if ($body.Contains($toolLink) -and -not (Test-Path -LiteralPath $ProfilerSource -PathType Leaf)) {
-        throw "Generated rule references missing package file: $toolLink"
     }
     return $body
 }
@@ -408,8 +411,9 @@ try {
 
     $skillSource = Join-Path $repositoryRoot (Get-Prop $package 'canonicalSkillFile')
     $referenceSource = Join-Path $repositoryRoot (Get-Prop $package 'referenceDir')
-    $profilerSource = Join-Path $repositoryRoot (Get-Prop $package 'profilerSource')
-    foreach ($path in @($skillSource, $referenceSource, $profilerSource)) {
+    $toolSources = @(Get-Prop $package 'toolSources')
+    $toolSourcePaths = @($toolSources | ForEach-Object { Join-UnderRoot -Root $repositoryRoot -RelativePath $_ })
+    foreach ($path in @($skillSource, $referenceSource) + $toolSourcePaths) {
         if (-not (Test-Path -LiteralPath $path)) { throw "Required source is missing: $path" }
     }
 
@@ -489,10 +493,9 @@ try {
     }
 
     $skillText = Get-Content -LiteralPath $skillSource -Raw
-    $sourceMap = Get-SourceFileMap -Package $package -SkillSource $skillSource -ReferenceDir $referenceSource -ProfilerSource $profilerSource
+    $sourceMap = Get-SourceFileMap -Package $package -SkillSource $skillSource -ReferenceDir $referenceSource -RepositoryRoot $repositoryRoot
     $referencesDirName = Get-Prop $layout 'referencesDirName'
     $toolsDirName = Get-Prop $layout 'toolsDirName'
-    $profilerFileName = Get-Prop $layout 'profilerFileName'
     $receiptFileName = Get-Prop $package 'receiptFileName'
 
     # ------------------------------- Plan ---------------------------------
@@ -610,7 +613,7 @@ try {
 
         try {
             if ($kind -eq 'skill-folder') {
-                # --- canonical folder: SKILL.md, references/ (mirrored), scripts/profiler ---
+                # --- canonical folder: SKILL.md, references/ (mirrored), scripts/ tools ---
                 $skillDestination = Join-UnderRoot -Root $unitBase -RelativePath (Get-Prop $package 'canonicalSkillFile')
                 if (-not $DryRun) {
                     if (Write-FileIfChanged -Destination $skillDestination -Content $skillText) { $filesWritten++ }
@@ -621,14 +624,16 @@ try {
                 $filesWritten += $referenceResult.Copied
                 $filesRemoved += $referenceResult.Removed
 
-                $profilerDestination = Join-UnderRoot -Root $unitBase -RelativePath (Get-Prop $package 'profilerSource')
-                if (-not $DryRun) { Copy-FileVerified -Source $profilerSource -Destination $profilerDestination }
-                $filesWritten++
+                foreach ($toolSource in $toolSources) {
+                    $toolDestination = Join-UnderRoot -Root $unitBase -RelativePath $toolSource
+                    if (-not $DryRun) { Copy-FileVerified -Source (Join-UnderRoot -Root $repositoryRoot -RelativePath $toolSource) -Destination $toolDestination }
+                    $filesWritten++
+                }
             } else {
-                # --- rule file + mirrored references + profiler tool ---
+                # --- rule file + mirrored references + tools ---
                 $format = Get-Prop $scopeDef 'format'
                 if (-not $format) { $format = 'plain' }
-                $body = Get-RuleBody -Registry $registry -SkillText $skillText -ReferenceDir $referenceSource -ProfilerSource $profilerSource
+                $body = Get-RuleBody -Registry $registry -SkillText $skillText -ReferenceDir $referenceSource -RepositoryRoot $repositoryRoot
                 $content = Get-FormattedRuleContent -Body $body -Format $format -Version $version -ReferencesDirName $referencesDirName
 
                 if (-not $DryRun) {
@@ -641,9 +646,11 @@ try {
                 $filesWritten += $referenceResult.Copied
                 $filesRemoved += $referenceResult.Removed
 
-                $toolDestination = Join-UnderRoot -Root $unitBase -RelativePath "$toolsDirName/$profilerFileName"
-                if (-not $DryRun) { Copy-FileVerified -Source $profilerSource -Destination $toolDestination }
-                $filesWritten++
+                foreach ($toolSource in $toolSources) {
+                    $toolDestination = Join-UnderRoot -Root $unitBase -RelativePath "$toolsDirName/$(Split-Path -Leaf $toolSource)"
+                    if (-not $DryRun) { Copy-FileVerified -Source (Join-UnderRoot -Root $repositoryRoot -RelativePath $toolSource) -Destination $toolDestination }
+                    $filesWritten++
+                }
             }
 
             # Additive, marked extras (pointer sections, config entries).
@@ -654,13 +661,13 @@ try {
                 $ownedFiles = [ordered]@{}
                 if ($kind -eq 'skill-folder') {
                     $ownedFiles[(Get-Prop $package 'canonicalSkillFile')] = $sourceMap[(Get-Prop $package 'canonicalSkillFile')]
-                    $ownedFiles[(Get-Prop $package 'profilerSource')] = $sourceMap[(Get-Prop $package 'profilerSource')]
+                    foreach ($toolSource in $toolSources) { $ownedFiles[$toolSource] = $sourceMap[$toolSource] }
                     foreach ($entry in (Get-DirectoryFileMap -Directory (Join-UnderRoot -Root $unitBase -RelativePath (Get-Prop $package 'referenceDir'))).GetEnumerator()) {
                         $ownedFiles["$((Get-Prop $package 'referenceDir'))/$($entry.Key)"] = $entry.Value
                     }
                 } else {
                     $ownedFiles[(Split-Path -Leaf $destination)] = Get-FileSha256 -PathValue $destination
-                    $ownedFiles["$toolsDirName/$profilerFileName"] = $sourceMap[(Get-Prop $package 'profilerSource')]
+                    foreach ($toolSource in $toolSources) { $ownedFiles["$toolsDirName/$(Split-Path -Leaf $toolSource)"] = $sourceMap[$toolSource] }
                     foreach ($entry in (Get-DirectoryFileMap -Directory (Join-UnderRoot -Root $unitBase -RelativePath $referencesDirName)).GetEnumerator()) {
                         $ownedFiles["$referencesDirName/$($entry.Key)"] = $entry.Value
                     }
