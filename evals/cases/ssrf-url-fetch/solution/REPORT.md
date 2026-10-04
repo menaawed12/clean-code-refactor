@@ -1,0 +1,1 @@
+Finding: [critical] previews/fetch.py — user-supplied URL fetched server-side without validation (SSRF) [CWE-918, A01:2025]: cloud metadata endpoints and internal addresses were reachable. Now only http(s) URLs whose host resolves to public addresses are fetched. Note: DNS can change between check and fetch; pin the resolved address or use an egress proxy for full protection.

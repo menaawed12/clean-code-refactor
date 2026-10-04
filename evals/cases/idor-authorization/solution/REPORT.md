@@ -1,0 +1,1 @@
+Finding: [critical] documents/service.py get_document — missing object-level authorization (IDOR) [CWE-639, A01:2025]. Any user could read any document. Added the same ownership check delete_document uses.

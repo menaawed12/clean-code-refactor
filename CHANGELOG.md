@@ -13,6 +13,8 @@ All notable changes to this package are recorded here. The format follows [Keep 
 
 - Security workflows: OpenSSF Scorecard (published results and code scanning), CodeQL for the workflows and the Python tooling, and dependency review on pull requests, all pinned by commit SHA.
 - Releases include a reproducible CycloneDX 1.6 SBOM (`clean-code-refactor-<version>.cdx.json`), covered by the checksums and attestations.
+- Evals as a regression gate: pass^k (every run of a case passes), `--baseline` / `--max-drop` / `--write-baseline` in `evals/run_evals.py`, unit tests for the metric logic, and `.github/workflows/evals.yml`, which runs the suite weekly in a protected environment with a lockfile-pinned agent CLI installed without install scripts.
+- Four eval cases: `idor-authorization`, `ssrf-url-fetch` (including DNS that resolves to loopback), `secrets-in-logs`, and `unneeded-dependency`.
 - `.github/CODEOWNERS`, and `docs/repository-settings.md` listing the rulesets, release, code security, Actions, and environment settings an administrator should apply.
 
 ### Fixed

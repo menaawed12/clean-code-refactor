@@ -68,6 +68,8 @@ jobs:
         run: ./tests/run-tests.ps1 -SkipBash
       - name: Eval self-test (every check is meaningful)
         run: python3 evals/grade.py self-test
+      - name: Eval runner unit tests
+        run: python3 -m unittest discover -s evals -p 'test_*.py'
       - name: SBOM generator smoke test
         run: |
           git archive --format=zip --prefix=pkg/ --output="$RUNNER_TEMP/pkg.zip" HEAD SKILL.md references scripts

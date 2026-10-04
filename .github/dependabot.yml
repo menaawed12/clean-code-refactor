@@ -1,5 +1,6 @@
-# Keeps SHA-pinned GitHub Actions current. Dependabot updates both the SHA and its
-# version comment; the cooldown avoids adopting a release in its first week.
+# Keeps SHA-pinned GitHub Actions and the pinned eval agent (evals/agent) current.
+# Dependabot updates each SHA with its version comment; the cooldown avoids adopting a
+# release in its first week.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -11,3 +12,9 @@ updates:
     groups:
       github-actions:
         patterns: ["*"]
+  - package-ecosystem: npm
+    directory: /evals/agent
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
