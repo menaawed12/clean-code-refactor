@@ -105,11 +105,18 @@ bash ./scripts/install.sh --editor all --target /path/to/project
 
 ### 5. Manual or air-gapped installation
 
-Each [GitHub release](https://github.com/menaawed12/clean-code-refactor/releases) ships `clean-code-refactor-<version>.zip`, the ready-to-copy skill folder, with a `SHA256SUMS` file and a signed build-provenance attestation. Verify a download before installing it:
+Each [GitHub release](https://github.com/menaawed12/clean-code-refactor/releases) ships two zips, a `SHA256SUMS` file, and a signed build-provenance attestation for every asset:
+
+- `clean-code-refactor-<version>-package.zip` — the full installable package (installers, registry, policy tooling, and docs).
+- `clean-code-refactor-<version>.zip` — just the skill folder, for copying by hand.
+
+Verify a release before installing it, then install from the extracted package:
 
 ```bash
 sha256sum --check --ignore-missing SHA256SUMS
-gh attestation verify clean-code-refactor-<version>.zip --repo menaawed12/clean-code-refactor
+gh attestation verify clean-code-refactor-<version>-package.zip --repo menaawed12/clean-code-refactor
+unzip clean-code-refactor-<version>-package.zip
+bash clean-code-refactor-<version>/scripts/install.sh --editor agents,claude --target /path/to/project
 ```
 
 Alternatively, download or transfer a reviewed copy of this repository, then copy `SKILL.md`, `references/`, `scripts/profile-repository.ps1`, and `scripts/profile-repository.sh` to the editor location in the table below. For rule-based editors, use the PowerShell or Bash installer from the reviewed local copy to generate the required rule file and supporting folders. This supports environments without internet access or where installation scripts must be reviewed before use.
@@ -130,6 +137,20 @@ Supported editor integrations are declared in `integrations/registry.json` and s
 | Amazon Q Developer | `.amazonq/rules/clean-code-refactor.md` |
 | OpenCode | `.opencode/skills/clean-code-refactor/` |
 | Kilo Code | `.kilo/rules/clean-code-refactor.md` and a `kilo.jsonc` `instructions` entry |
+
+### Verifying installed copies
+
+`--verify` (bash) and `-Verify` (PowerShell) check installed targets without writing anything. A target passes when every owned file matches its install receipt and the package, and the installed version is current. Use `--expect-version` / `-ExpectVersion` to require a pinned version across a fleet. The exit code is 1 if any target is modified, outdated, or unmanaged, or if a target you named explicitly is not installed, so the check can gate CI or a compliance job:
+
+```bash
+bash ./scripts/install.sh --verify --editor all --target /path/to/project --expect-version 1.4.0 --json
+```
+
+```powershell
+.\scripts\install.ps1 -Verify -Editor all -TargetPath C:\path\to\project -ExpectVersion 1.4.0 -OutputFormat Json
+```
+
+Verification detects drift and accidental or unreviewed edits. Receipts are not signed, so someone who can edit both an installed file and its receipt can hide the change; protect install locations with normal file permissions.
 
 ### Organization policy
 

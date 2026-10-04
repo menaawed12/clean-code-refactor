@@ -43,6 +43,12 @@ Options:
                         user-modified owned files.
       --list            List registry targets and exit.
       --json            Machine-readable JSON plan/result output.
+      --verify          Read-only check of installed targets: every owned file matches
+                        its receipt and the package, and the version is current.
+                        Exit 1 if any target is modified, outdated, or unmanaged.
+      --expect-version V
+                        With --verify, require installed version V instead of this
+                        package's version (for pinned fleets).
       --policy FILE     Organization policy (JSON) to install next to the skill as
                         policy.json. Validated with scripts/check-policy.ps1 when
                         PowerShell is available. Later runs without --policy keep it.
@@ -88,6 +94,8 @@ force=0
 list_only=0
 json_out=0
 policy_file=""
+verify_mode=0
+expect_version=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -100,6 +108,8 @@ while [[ $# -gt 0 ]]; do
     -f|--force) force=1; shift ;;
     --list) list_only=1; shift ;;
     --json) json_out=1; shift ;;
+    --verify) verify_mode=1; shift ;;
+    --expect-version) [ $# -ge 2 ] || { echo "Error: --expect-version needs a version." >&2; exit 2; }; expect_version="$2"; shift 2 ;;
     --policy) [ $# -ge 2 ] || { echo "Error: --policy needs a file." >&2; exit 2; }; policy_file="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
@@ -110,6 +120,15 @@ fail_usage() {
   echo "Error: $1" >&2
   exit 2
 }
+
+if [ -n "$expect_version" ]; then
+  [ "$verify_mode" -eq 1 ] || fail_usage "--expect-version requires --verify."
+  [[ "$expect_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail_usage "--expect-version must be MAJOR.MINOR.PATCH."
+fi
+if [ "$verify_mode" -eq 1 ]; then
+  [ "$dry_run" -eq 0 ] || fail_usage "--verify is read-only; do not combine it with --dry-run."
+  force=0
+fi
 
 [[ "$scope" == "project" || "$scope" == "user" ]] || fail_usage "Unknown scope: $scope"
 
@@ -643,6 +662,67 @@ for id in $selected; do
     plan_count=$((plan_count + 1))
   fi
 done
+
+# --------------------------- verify (read-only) ----------------------------
+# Reuses the plan: "up-to-date" already means every owned file matches its receipt and
+# the package. Nothing below writes.
+if [ "$verify_mode" -eq 1 ]; then
+  expected_version="${expect_version:-$PKG_VERSION}"
+  explicit=1
+  case "$requested" in ""|all|detected) explicit=0 ;; esac
+  verify_failed=0
+  VERIFY_LINES=()
+  for i in $(seq 0 $((plan_count - 1))); do
+    vstatus=""; vreason="${P_REASON[$i]}"; installed_version=""; vdest=""
+    if [ -n "${P_RECEIPT[$i]}" ] && [ -f "${P_RECEIPT[$i]}" ]; then installed_version="$(receipt_version "${P_RECEIPT[$i]}")"; fi
+    if [ -n "${P_ROOT[$i]}" ]; then vdest="$(join_under_root "${P_ROOT[$i]}" "${P_PATH[$i]}")"; fi
+    case "${P_STATUS[$i]}" in
+      failed) vstatus="failed" ;;
+      install) vstatus="not-installed"; vreason="" ;;
+      up-to-date) vstatus="verified"; vreason="" ;;
+      update) vstatus="outdated"; vreason="installed files or version ${installed_version:-unknown} differ from package $PKG_VERSION" ;;
+      skipped)
+        case "$vreason" in
+          *"no package receipt"*) vstatus="unmanaged"; vreason="installed files have no package receipt" ;;
+          *"user modifications"*) vstatus="modified"; vreason="an owned file is missing or differs from its receipt" ;;
+          *) vstatus="not-applicable" ;;
+        esac ;;
+    esac
+    # Pinned to another version: the package cannot vouch for those files, so check the
+    # receipt integrity (above) and the version only.
+    if [ "$expected_version" != "$PKG_VERSION" ] && { [ "$vstatus" = "verified" ] || [ "$vstatus" = "outdated" ]; }; then
+      if [ "$installed_version" = "$expected_version" ]; then vstatus="verified"; vreason="integrity and version checked; content not compared with package $PKG_VERSION"
+      else vstatus="outdated"; vreason="installed version ${installed_version:-unknown}, expected $expected_version"; fi
+    fi
+    case "$vstatus" in
+      verified|not-applicable) ;;
+      not-installed) if [ $explicit -eq 1 ]; then verify_failed=1; fi ;;
+      *) verify_failed=1 ;;
+    esac
+    if [ "$json_out" -eq 1 ]; then
+      VERIFY_LINES+=("{ \"editor\": \"$(json_escape "${P_ID[$i]}")\", \"scope\": \"$scope\", \"status\": \"$vstatus\", \"destination\": \"$(json_escape "$vdest")\", \"installedVersion\": \"$(json_escape "$installed_version")\", \"reason\": \"$(json_escape "$vreason")\" }")
+    else
+      line="[$vstatus] ${P_ID[$i]} ($scope)"
+      if [ -n "$vdest" ]; then line="$line -> $vdest"; fi
+      if [ -n "$vreason" ]; then line="$line - $vreason"; fi
+      echo "$line"
+    fi
+  done
+  if [ "$json_out" -eq 1 ]; then
+    passed_json="true"; [ $verify_failed -eq 1 ] && passed_json="false"
+    printf '{ "mode": "verify", "package": "%s", "expectedVersion": "%s", "scope": "%s", "passed": %s, "results": [\n' "$PKG_VERSION" "$(json_escape "$expected_version")" "$scope" "$passed_json"
+    first=1
+    for entry in ${VERIFY_LINES[@]+"${VERIFY_LINES[@]}"}; do
+      [ $first -eq 1 ] || printf ',\n'
+      first=0
+      printf '%s' "$entry"
+    done
+    printf '\n] }\n'
+  else
+    if [ $verify_failed -eq 1 ]; then echo "Verification failed."; else echo "Verification passed."; fi
+  fi
+  exit $verify_failed
+fi
 
 blocked=0
 for i in $(seq 0 $((plan_count - 1))); do

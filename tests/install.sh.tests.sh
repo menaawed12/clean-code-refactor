@@ -241,6 +241,28 @@ else
   skip_test "T18 invalid policy rejection (PowerShell not available to validate)"
 fi
 
+# ---------------------------------------------------------------- T19 verify mode
+T="$(new_target t19)"
+run_installer --editor claude,cursor --target "$T"
+BEFORE="$(find "$T" -type f -exec cksum {} + | sort)"
+run_installer --verify --editor claude,cursor --target "$T" --json
+assert_eq "T19 clean install verifies (exit 0)" "$RUN_EXIT" "0"
+check "T19 verify reports passed" output_has '"passed": true'
+check "T19 verify writes nothing" [ "$(find "$T" -type f -exec cksum {} + | sort)" = "$BEFORE" ]
+run_installer --verify --editor claude --target "$T" --expect-version 0.0.1
+assert_eq "T19 version pin mismatch fails (exit 1)" "$RUN_EXIT" "1"
+check "T19 pin mismatch is reported as outdated" output_has '\[outdated\] claude'
+printf 'tampered' >> "$T/.cursor/rules/clean-code-refactor-references/agent-security.md"
+run_installer --verify --editor cursor --target "$T"
+assert_eq "T19 tampered reference fails (exit 1)" "$RUN_EXIT" "1"
+check "T19 tampering is reported as modified" output_has '\[modified\] cursor'
+run_installer --verify --editor windsurf --target "$T"
+assert_eq "T19 explicitly named missing target fails" "$RUN_EXIT" "1"
+run_installer --verify --editor all --target "$(new_target t19b)"
+assert_eq "T19 'all' with nothing installed does not fail" "$RUN_EXIT" "0"
+run_installer --expect-version 1.0.0 --editor claude --target "$T"
+assert_eq "T19 --expect-version without --verify is a usage error" "$RUN_EXIT" "2"
+
 # ---------------------------------------------------------------- T15 bash profiler
 profiler="$repository_root/scripts/profile-repository.sh"
 run_profiler() {

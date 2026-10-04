@@ -335,6 +335,23 @@ try {
     $exitCode = Invoke-Installer -Arguments @('-Editor', 'claude', '-TargetPath', $invalidTarget, '-PolicyFile', $invalidPolicy)
     Assert-True 'T18 invalid policy is rejected before writing' (($exitCode -eq 2) -and -not (Test-Path -LiteralPath (Join-Path $invalidTarget '.claude')))
 
+    # ---------------------------------------------------------------- T19 verify mode
+    $verifyTarget = New-TempDirectory; Register-Cleanup $verifyTarget
+    $null = Invoke-Installer -Arguments @('-Editor', 'claude,cursor', '-TargetPath', $verifyTarget)
+    $stateBefore = Get-TreeState -Directory $verifyTarget
+    $verifyRun = Invoke-InstallerOutput -Arguments @('-Verify', '-Editor', 'claude,cursor', '-TargetPath', $verifyTarget, '-OutputFormat', 'Json')
+    $verifyReport = $null
+    try { $verifyReport = $verifyRun.Output | ConvertFrom-Json } catch { $verifyReport = $null }
+    Assert-True 'T19 clean install verifies' (($verifyRun.ExitCode -eq 0) -and ($null -ne $verifyReport) -and $verifyReport.passed)
+    $stateAfter = Get-TreeState -Directory $verifyTarget
+    Assert-True 'T19 verify writes nothing' (($stateBefore.Count -eq $stateAfter.Count) -and -not (Compare-Object @($stateBefore.Values) @($stateAfter.Values)))
+    Assert-True 'T19 version pin mismatch fails' ((Invoke-Installer -Arguments @('-Verify', '-Editor', 'claude', '-TargetPath', $verifyTarget, '-ExpectVersion', '0.0.1')) -eq 1)
+    Add-Content -LiteralPath (Join-Path $verifyTarget '.claude/skills/clean-code-refactor/references/agent-security.md') -Value 'tampered'
+    $tamperRun = Invoke-InstallerOutput -Arguments @('-Verify', '-Editor', 'claude', '-TargetPath', $verifyTarget, '-OutputFormat', 'Json')
+    $tamperReport = $null
+    try { $tamperReport = $tamperRun.Output | ConvertFrom-Json } catch { $tamperReport = $null }
+    Assert-True 'T19 tampering is reported as modified' (($tamperRun.ExitCode -eq 1) -and ($null -ne $tamperReport) -and (@($tamperReport.results)[0].status -eq 'modified'))
+
     # ---------------------------------------------------------------- profiler smoke test
     $fakeRepo = New-TempDirectory; Register-Cleanup $fakeRepo
     New-Item -ItemType Directory -Path (Join-Path $fakeRepo 'src/auth'), (Join-Path $fakeRepo '.github/workflows'), (Join-Path $fakeRepo 'docs'), (Join-Path $fakeRepo 'node_modules/should-not-be-read') -Force | Out-Null

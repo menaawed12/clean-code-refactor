@@ -6,6 +6,9 @@
 # Assets:
 #   clean-code-refactor-<version>.zip  - the installable skill folder (SKILL.md, LICENSE,
 #                                        references/, the shipped scripts, and policy/)
+#   clean-code-refactor-<version>-package.zip
+#                                      - the full installable package (installers, registry,
+#                                        policy tooling, and docs), for verified installs
 #   SHA256SUMS                         - checksums for every asset
 # Each asset gets a signed SLSA build-provenance attestation. Verify a download with:
 #   gh attestation verify clean-code-refactor-<version>.zip --repo <owner>/<repo>
@@ -65,6 +68,10 @@ jobs:
             --output="dist/clean-code-refactor-${VERSION}.zip" "$GITHUB_SHA" \
             SKILL.md LICENSE references scripts/profile-repository.ps1 scripts/profile-repository.sh \
             scripts/check-policy.ps1 policy
+          git archive --format=zip --prefix="clean-code-refactor-${VERSION}/" \
+            --output="dist/clean-code-refactor-${VERSION}-package.zip" "$GITHUB_SHA" \
+            SKILL.md LICENSE README.md SECURITY.md CHANGELOG.md .gitattributes \
+            references scripts integrations policy docs
           # Release notes are this version's CHANGELOG section.
           awk -v heading="## [${VERSION}]" '
             index($0, heading) == 1 { found = 1; next }

@@ -35,6 +35,14 @@
 .PARAMETER List
     List registry targets and exit.
 
+.PARAMETER Verify
+    Read-only check of installed targets: every owned file matches its receipt and the
+    package, and the version is current. Exits 1 if any target is modified, outdated, or
+    unmanaged, or if an explicitly named target is not installed.
+
+.PARAMETER ExpectVersion
+    With -Verify, require this installed version instead of the package version.
+
 .PARAMETER PolicyFile
     Organization policy (JSON) to install next to the skill as policy.json. It is validated with
     scripts/check-policy.ps1 first. Later runs without -PolicyFile keep the installed policy.
@@ -69,6 +77,11 @@ param(
 
     [switch]$List,
 
+    [switch]$Verify,
+
+    [ValidatePattern('^\d+\.\d+\.\d+$')]
+    [string]$ExpectVersion,
+
     [string]$PolicyFile,
 
     [ValidateSet('Text', 'Json')]
@@ -77,6 +90,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $script:HadFailure = $false
+if ($ExpectVersion -and -not $Verify) { Write-Error '-ExpectVersion requires -Verify.' -ErrorAction Continue; exit 2 }
+if ($Verify -and $DryRun) { Write-Error '-Verify is read-only; do not combine it with -DryRun.' -ErrorAction Continue; exit 2 }
+if ($Verify) { $Force = $false }
 $isWindowsOs = ($env:OS -eq 'Windows_NT')
 
 function Get-Prop {
@@ -632,6 +648,56 @@ try {
             ReceiptPath = $receiptPath; Status = $status; Reason = $reason; Verification = $verification
             ScopeDef = $scopeDef
         }
+    }
+
+    # ----------------------------- Verify (read-only) ----------------------
+    # Reuses the plan: 'up-to-date' already means every owned file matches its receipt and
+    # the package. Nothing below writes.
+    if ($Verify) {
+        $expectedVersion = if ($ExpectVersion) { $ExpectVersion } else { $version }
+        $explicit = -not (($Editor.Count -eq 1) -and ($Editor[0] -in @('all', 'detected')))
+        $verifyFailed = $false
+        $verifyResults = @()
+        foreach ($item in $plan) {
+            $receiptData = if ($item.ReceiptPath) { Get-Receipt -ReceiptPath $item.ReceiptPath } else { $null }
+            $installedVersion = [string](Get-Prop $receiptData 'version')
+            $reasonText = $item.Reason
+            $verifyStatus = switch ($item.Status) {
+                'failed' { 'failed' }
+                'install' { 'not-installed'; $reasonText = $null }
+                'up-to-date' { 'verified'; $reasonText = $null }
+                'update' { 'outdated'; $reasonText = "installed files or version $(if ($installedVersion) { $installedVersion } else { 'unknown' }) differ from package $version" }
+                default {
+                    if ("$($item.Reason)" -like '*no package receipt*') { 'unmanaged'; $reasonText = 'installed files have no package receipt' }
+                    elseif ("$($item.Reason)" -like '*user modifications*') { 'modified'; $reasonText = 'an owned file is missing or differs from its receipt' }
+                    else { 'not-applicable' }
+                }
+            }
+            # Pinned to another version: check receipt integrity (above) and the version only.
+            if ($expectedVersion -ne $version -and $verifyStatus -in @('verified', 'outdated')) {
+                if ($installedVersion -eq $expectedVersion) { $verifyStatus = 'verified'; $reasonText = "integrity and version checked; content not compared with package $version" }
+                else { $verifyStatus = 'outdated'; $reasonText = "installed version $(if ($installedVersion) { $installedVersion } else { 'unknown' }), expected $expectedVersion" }
+            }
+            if ($verifyStatus -eq 'not-installed') { if ($explicit) { $verifyFailed = $true } }
+            elseif ($verifyStatus -notin @('verified', 'not-applicable')) { $verifyFailed = $true }
+            $verifyResults += [pscustomobject]@{
+                editor = $item.Editor; scope = $item.Scope; status = $verifyStatus
+                destination = $item.Destination; installedVersion = $installedVersion; reason = $reasonText
+            }
+        }
+        if ($OutputFormat -eq 'Json') {
+            [ordered]@{ mode = 'verify'; package = $version; expectedVersion = $expectedVersion; scope = $Scope; passed = (-not $verifyFailed); results = @($verifyResults) } | ConvertTo-Json -Depth 4
+        } else {
+            foreach ($result in $verifyResults) {
+                $line = "[$($result.status)] $($result.editor) ($($result.scope))"
+                if ($result.destination) { $line += " -> $($result.destination)" }
+                if ($result.reason) { $line += " - $($result.reason)" }
+                Write-Output $line
+            }
+            Write-Output $(if ($verifyFailed) { 'Verification failed.' } else { 'Verification passed.' })
+        }
+        if ($verifyFailed) { exit 1 }
+        exit 0
     }
 
     $blocked = @($plan | Where-Object { $_.Status -eq 'failed' })
