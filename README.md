@@ -46,6 +46,7 @@ Profile a target repository before non-trivial work:
 - `integrations/registry.json` — machine-readable editor/agent target registry (single source of truth for installers).
 - `docs/ide-compatibility.md` — human-readable compatibility summary and roadmap.
 - `SECURITY.md` — vulnerability reporting route and design commitments.
+- `CHANGELOG.md` — release history; the version itself lives in `integrations/registry.json`.
 - `scripts/validate-skill.ps1` — validates package structure, links, registry/installer parity, and required instructions.
 - `scripts/install.ps1` — registry-driven installer (Windows PowerShell).
 - `scripts/install.sh` — registry-parity Bash installer for macOS and Linux.
@@ -92,7 +93,14 @@ bash ./scripts/install.sh --editor all --target /path/to/project
 
 ### 5. Manual or air-gapped installation
 
-Download or transfer a reviewed copy of this repository, then copy `SKILL.md`, `references/`, and `scripts/profile-repository.ps1` to the editor location in the table below. For rule-based editors, use the PowerShell or Bash installer from the reviewed local copy to generate the required rule file and supporting folders. This supports environments without internet access or where installation scripts must be reviewed before use.
+Each [GitHub release](https://github.com/menaawed12/clean-code-refactor/releases) ships `clean-code-refactor-<version>.zip`, the ready-to-copy skill folder, with a `SHA256SUMS` file and a signed build-provenance attestation. Verify a download before installing it:
+
+```bash
+sha256sum --check --ignore-missing SHA256SUMS
+gh attestation verify clean-code-refactor-<version>.zip --repo menaawed12/clean-code-refactor
+```
+
+Alternatively, download or transfer a reviewed copy of this repository, then copy `SKILL.md`, `references/`, and `scripts/profile-repository.ps1` to the editor location in the table below. For rule-based editors, use the PowerShell or Bash installer from the reviewed local copy to generate the required rule file and supporting folders. This supports environments without internet access or where installation scripts must be reviewed before use.
 
 Supported editor integrations are declared in `integrations/registry.json` and summarized in [docs/ide-compatibility.md](docs/ide-compatibility.md). Both installers are validated against the registry; they cannot drift apart.
 
@@ -157,7 +165,7 @@ Review the changed TypeScript files for lint, duplicate code, security, and reli
 .\scripts\validate-skill.ps1
 ```
 
-Validation checks required files and sections, resolves every relative Markdown link in the package, verifies the rule-body path transformation produces no double-prefixed or broken links, and fails when the registry and either installer drift apart.
+Validation checks the `SKILL.md` front matter against the Agent Skills specification (allowed fields, name format, length limits), keeps the package version identical across the registry, `SKILL.md`, the bash installer, and `CHANGELOG.md`, checks required files and sections, resolves every relative Markdown link in the package, verifies the rule-body path transformation produces no double-prefixed or broken links, and fails when the registry and either installer drift apart.
 
 ## Test
 
@@ -171,7 +179,13 @@ Behavioral suites exercise the installers end-to-end in disposable directories (
 bash ./tests/install.sh.tests.sh
 ```
 
-GitHub Actions CI (`.github/workflows/ci.yml`) runs validation on Windows PowerShell 5.1 and PowerShell 7, the PowerShell suite, the bash suite on Linux and macOS, ShellCheck, and PSScriptAnalyzer, with read-only permissions and no secrets.
+GitHub Actions CI (`.github/workflows/ci.yml`) runs validation on Windows PowerShell 5.1 and PowerShell 7, the PowerShell suite on Windows and Linux, the bash suite on Linux and macOS, ShellCheck, PSScriptAnalyzer (rules and exclusions in `PSScriptAnalyzerSettings.psd1`), and actionlint plus zizmor for the workflows themselves. It runs with read-only permissions and no secrets, actions are pinned to commit SHAs and updated by Dependabot, and linters are pinned to exact versions.
+
+## Release
+
+1. Set the new version in `integrations/registry.json`, `SKILL.md` (`metadata.version`), and `scripts/install.sh` (`PKG_VERSION`); `scripts/validate-skill.ps1` fails until all three match.
+2. Add a dated `## [<version>] - YYYY-MM-DD` entry to `CHANGELOG.md`.
+3. Push a `v<version>` tag. `.github/workflows/release.yml` checks that the tag, registry, and changelog agree, validates the package, and publishes the release assets with checksums and provenance attestations.
 
 ## Security
 

@@ -1,9 +1,11 @@
 ---
 name: "clean-code-refactor"
-description: "Refactor, review, and harden code without changing intended behavior. Use for cleanup, code review remediation, extracting responsibilities, simplifying modules, improving tests, lint remediation, duplicate detection, and preventing static-analysis-grade security, reliability, and maintainability issues across major languages. Preserve public contracts, authorization, data integrity, and existing project conventions."
-compatibility: "Language-aware guidance for Python, JavaScript/TypeScript, Java/Kotlin/Scala, C#/.NET, Go, Rust, C/C++/Objective-C, PHP, Ruby, Swift, Dart, Elixir/Erlang, Clojure, Haskell, Perl, Lua, R, Julia, SQL, shell, and infrastructure code"
+description: "Behavior-preserving refactoring, review remediation, and hardening for code in any major language. Use when asked to refactor, clean up, simplify, or review code; fix lint, static-analysis, or duplicate-code findings; extract responsibilities; or improve tests. Prevents security, reliability, and maintainability defects while preserving public contracts, authorization, data integrity, and existing project conventions."
+license: "MIT"
+compatibility: "Any Agent Skills-compatible coding agent with read access to the target repository. Running checks uses the project's own toolchain. Optional: PowerShell 7+ or Windows PowerShell 5.1 for scripts/profile-repository.ps1."
 metadata:
   author: "Clean Code Refactor Skill"
+  version: "1.2.0"
 ---
 
 ## User Input
@@ -11,6 +13,8 @@ metadata:
 ```text
 $ARGUMENTS
 ```
+
+If the block above shows the literal text `$ARGUMENTS`, your agent does not substitute skill arguments; use the user's request instead.
 
 Honor the requested scope. Treat a request to refactor as behavior-preserving unless it explicitly authorizes a product, API, or data-model change.
 
@@ -93,6 +97,8 @@ Do not attempt to authenticate with, upload code to, query, or configure an exte
 ## Cross-Language Hardening
 
 Read [language-hardening.md](references/language-hardening.md) when changing a language, sink, runtime feature, or deployment artifact covered there. Apply only the relevant sections.
+
+Dedicated sections cover Python, JavaScript/TypeScript, Java/Kotlin/Scala, C#/.NET, Go, Rust, C/C++/Objective-C, PHP, Ruby, Swift, Dart, Elixir/Erlang, Clojure, Haskell, Perl, Lua, R, Julia, SQL, shell, and infrastructure code.
 
 Apply the Universal Review to every language. For a listed language, follow its dedicated rules; for an unlisted language, use its declared version, standard tooling, and authoritative language documentation to map equivalent controls before editing. Do not apply a language convention across ecosystems when its safety or semantics differ.
 

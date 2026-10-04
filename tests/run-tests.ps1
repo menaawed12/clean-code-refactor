@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Behavioral test suite for the clean-code-refactor package (no Pester dependency).
 
@@ -20,6 +20,10 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# The installer prefers XDG_CONFIG_HOME over -UserHome; clear it so user-scope tests
+# stay inside their redirected homes and never write to the host's real config.
+Remove-Item -Path Env:XDG_CONFIG_HOME -ErrorAction SilentlyContinue
 $repositoryRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $installer = Join-Path $repositoryRoot 'scripts/install.ps1'
 $validator = Join-Path $repositoryRoot 'scripts/validate-skill.ps1'
@@ -128,7 +132,7 @@ try {
     # ---------------------------------------------------------------- T4 idempotent re-run
     $json = Invoke-InstallerOutput -Arguments @('-Editor', 'all', '-TargetPath', $target, '-OutputFormat', 'Json')
     $plan = $null
-    try { $plan = $json.Output | ConvertFrom-Json } catch { }
+    try { $plan = $json.Output | ConvertFrom-Json } catch { $plan = $null }
     Assert-True 'T4 re-run exits 0' ($json.ExitCode -eq 0)
     Assert-True 'T4 re-run reports everything up-to-date' ($null -ne $plan -and $plan.summary.upToDate -gt 0 -and $plan.summary.failed -eq 0) 'summary counts inconsistent'
 
@@ -180,7 +184,7 @@ try {
     $result = Invoke-InstallerOutput -Arguments @('-Editor', 'all', '-TargetPath', $target, '-DryRun', '-OutputFormat', 'Json')
     $after = Get-TreeState -Directory $target
     $plan = $null
-    try { $plan = $result.Output | ConvertFrom-Json } catch { }
+    try { $plan = $result.Output | ConvertFrom-Json } catch { $plan = $null }
     Assert-True 'T8 dry run exits 0 and reports dryRun' (($result.ExitCode -eq 0) -and ($null -ne $plan) -and ($plan.dryRun -eq $true))
     Assert-True 'T8 dry run changes nothing' (($before.Count -eq $after.Count) -and (-not (Compare-Object @($before.Keys) @($after.Keys))))
 
@@ -235,7 +239,7 @@ try {
     $target = New-TempDirectory; Register-Cleanup $target
     $result = Invoke-InstallerOutput -Arguments @('-Editor', 'all', '-TargetPath', $target, '-OutputFormat', 'Json')
     $plan = $null
-    try { $plan = $result.Output | ConvertFrom-Json } catch { }
+    try { $plan = $result.Output | ConvertFrom-Json } catch { $plan = $null }
     $count = 0
     if ($plan) { $count = @($plan.results).Count }
     Assert-True 'T13 JSON output parses with results' (($result.ExitCode -eq 0) -and ($null -ne $plan) -and ($count -gt 0))
@@ -246,13 +250,14 @@ try {
     # ---------------------------------------------------------------- T14 bash suite
     # Prefer Git Bash; System32 bash.exe is WSL and cannot run Windows-style paths.
     $bashExe = $null
+    # These variables exist only on Windows; skip unset ones so Join-Path never gets $null.
     $gitBashCandidates = @(
-        (Join-Path $env:ProgramFiles 'Git/bin/bash.exe'),
-        (Join-Path ${env:ProgramFiles(x86)} 'Git/bin/bash.exe'),
-        (Join-Path $env:LOCALAPPDATA 'Programs/Git/bin/bash.exe')
-    )
+        @($env:ProgramFiles, 'Git/bin/bash.exe'),
+        @(${env:ProgramFiles(x86)}, 'Git/bin/bash.exe'),
+        @($env:LOCALAPPDATA, 'Programs/Git/bin/bash.exe')
+    ) | Where-Object { $_[0] } | ForEach-Object { Join-Path $_[0] $_[1] }
     foreach ($candidate in $gitBashCandidates) {
-        if ($candidate -and (Test-Path $candidate)) { $bashExe = $candidate; break }
+        if (Test-Path -LiteralPath $candidate) { $bashExe = $candidate; break }
     }
     if (-not $bashExe) {
         $resolvedBash = Get-Command bash -ErrorAction SilentlyContinue
@@ -286,19 +291,19 @@ try {
     Set-Content -LiteralPath (Join-Path $fakeRepo 'docs/authentication-policy.md') -Value 'documentation about authentication policy' -NoNewline
     Set-Content -LiteralPath (Join-Path $fakeRepo 'node_modules/should-not-be-read/leak.go') -Value 'module leak' -NoNewline
     $profileOutput = & $powershellHost -NoProfile -NonInteractive -ExecutionPolicy Bypass -File (Join-Path $repositoryRoot 'scripts/profile-repository.ps1') -Path $fakeRepo -OutputFormat Json | Out-String
-    $profile = $null
-    try { $profile = $profileOutput | ConvertFrom-Json } catch { }
-    Assert-True 'T15 profiler JSON parses and is complete' (($null -ne $profile) -and ($profile.complete -eq $true))
-    Assert-True 'T15 profiler detects nested language manifest' ($profile.languages -contains 'TypeScript/JavaScript')
-    Assert-True 'T15 profiler detects React framework' ($profile.frameworks -contains 'React/Next.js')
-    Assert-True 'T15 profiler detects GitHub Actions config' ($profile.configuredChecks -contains 'GitHub Actions')
-    Assert-True 'T15 profiler labels auth surface as code risk' ($profile.riskSignals -contains 'authentication or authorization surface')
-    Assert-True 'T15 profiler labels auth doc as documentation hint' ($profile.documentationHints -contains 'authentication or authorization surface')
-    Assert-True 'T15 profiler evidence path present' (($profile.signals | Where-Object { $_.value -eq 'authentication or authorization surface' -and $_.category -eq 'riskSignals' } | ForEach-Object { $_.evidence -contains 'src/auth/login.py' }) -contains $true)
-    Assert-True 'T15 pruned directories are excluded' (($profile.signals | Where-Object { $_.evidence -match 'node_modules' } | Measure-Object).Count -eq 0)
+    $profileReport = $null
+    try { $profileReport = $profileOutput | ConvertFrom-Json } catch { $profileReport = $null }
+    Assert-True 'T15 profiler JSON parses and is complete' (($null -ne $profileReport) -and ($profileReport.complete -eq $true))
+    Assert-True 'T15 profiler detects nested language manifest' ($profileReport.languages -contains 'TypeScript/JavaScript')
+    Assert-True 'T15 profiler detects React framework' ($profileReport.frameworks -contains 'React/Next.js')
+    Assert-True 'T15 profiler detects GitHub Actions config' ($profileReport.configuredChecks -contains 'GitHub Actions')
+    Assert-True 'T15 profiler labels auth surface as code risk' ($profileReport.riskSignals -contains 'authentication or authorization surface')
+    Assert-True 'T15 profiler labels auth doc as documentation hint' ($profileReport.documentationHints -contains 'authentication or authorization surface')
+    Assert-True 'T15 profiler evidence path present' (($profileReport.signals | Where-Object { $_.value -eq 'authentication or authorization surface' -and $_.category -eq 'riskSignals' } | ForEach-Object { $_.evidence -contains 'src/auth/login.py' }) -contains $true)
+    Assert-True 'T15 pruned directories are excluded' (($profileReport.signals | Where-Object { $_.evidence -match 'node_modules' } | Measure-Object).Count -eq 0)
 } finally {
     foreach ($path in $script:cleanup) {
-        try { Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction SilentlyContinue } catch { }
+        try { Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction SilentlyContinue } catch { Write-Verbose "Cleanup failed for ${path}: $_" }
     }
 }
 

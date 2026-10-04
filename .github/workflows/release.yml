@@ -1,0 +1,90 @@
+# Publishes a GitHub release when a version tag (vMAJOR.MINOR.PATCH) is pushed.
+#
+# Release gates: the tag must equal the version in integrations/registry.json, package
+# validation must pass, and CHANGELOG.md must have a dated entry for that version.
+#
+# Assets:
+#   clean-code-refactor-<version>.zip  - the installable skill folder (SKILL.md, LICENSE,
+#                                        references/, scripts/profile-repository.ps1)
+#   SHA256SUMS                         - checksums for every asset
+# Each asset gets a signed SLSA build-provenance attestation. Verify a download with:
+#   gh attestation verify clean-code-refactor-<version>.zip --repo <owner>/<repo>
+name: Release
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write      # create the release and upload assets
+      id-token: write      # mint the OIDC token Sigstore needs to sign attestations
+      attestations: write  # store the provenance attestations
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check tag, registry version, and changelog agree
+        id: version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          registry_version="$(jq -r '.package.version' integrations/registry.json)"
+          if [ "$version" != "$registry_version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match registry version $registry_version."
+            exit 1
+          fi
+          if ! grep -Eq "^## \[${version//./\\.}\] - [0-9]{4}-[0-9]{2}-[0-9]{2}$" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md needs a dated '## [$version] - YYYY-MM-DD' entry before release."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Validate package
+        shell: pwsh
+        run: ./scripts/validate-skill.ps1
+
+      - name: Build release assets
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mkdir dist
+          # git archive takes file times from the tagged commit, so rebuilding a tag
+          # yields the same archive.
+          git archive --format=zip --prefix=clean-code-refactor/ \
+            --output="dist/clean-code-refactor-${VERSION}.zip" "$GITHUB_SHA" \
+            SKILL.md LICENSE references scripts/profile-repository.ps1
+          # Release notes are this version's CHANGELOG section.
+          awk -v heading="## [${VERSION}]" '
+            index($0, heading) == 1 { found = 1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+          (cd dist && sha256sum -- * > SHA256SUMS)
+          cat dist/SHA256SUMS
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/*
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "clean-code-refactor ${VERSION}" \
+            --notes-file release-notes.md \
+            --verify-tag
