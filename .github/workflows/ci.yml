@@ -68,6 +68,12 @@ jobs:
         run: ./tests/run-tests.ps1 -SkipBash
       - name: Eval self-test (every check is meaningful)
         run: python3 evals/grade.py self-test
+      - name: SBOM generator smoke test
+        run: |
+          git archive --format=zip --prefix=pkg/ --output="$RUNNER_TEMP/pkg.zip" HEAD SKILL.md references scripts
+          python3 .github/scripts/generate_sbom.py --package-zip "$RUNNER_TEMP/pkg.zip" --version 0.0.0 \
+            --repository "$GITHUB_REPOSITORY" --timestamp 0 --output "$RUNNER_TEMP/sbom.cdx.json"
+          python3 -c "import json, sys; bom = json.load(open(sys.argv[1])); assert bom['specVersion'] == '1.6' and bom['components']" "$RUNNER_TEMP/sbom.cdx.json"
       - name: Eval runner smoke test (no-op agent)
         run: python3 evals/run_evals.py --agent-cmd 'cat {prompt_file}' --cases sql-injection-refactor --out "$RUNNER_TEMP/eval-smoke"
 

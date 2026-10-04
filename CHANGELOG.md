@@ -11,6 +11,10 @@ All notable changes to this package are recorded here. The format follows [Keep 
 - `--verify` / `-Verify` checks installed targets without writing: every owned file must match its receipt and the package, and the version must be current (or match `--expect-version` / `-ExpectVersion`). It exits 1 on modified, outdated, or unmanaged installs, for CI and compliance checks.
 - Releases also publish `clean-code-refactor-<version>-package.zip`, the full installable package, so administrators can verify a release and install from it without cloning the repository.
 
+- Security workflows: OpenSSF Scorecard (published results and code scanning), CodeQL for the workflows and the Python tooling, and dependency review on pull requests, all pinned by commit SHA.
+- Releases include a reproducible CycloneDX 1.6 SBOM (`clean-code-refactor-<version>.cdx.json`), covered by the checksums and attestations.
+- `.github/CODEOWNERS`, and `docs/repository-settings.md` listing the rulesets, release, code security, Actions, and environment settings an administrator should apply.
+
 ### Fixed
 
 - The bash installer never reported a target as up-to-date: it wrote `SKILL.md` without its final newline and compared generated rule files with the source `SKILL.md`. The PowerShell installer had the same rule-file comparison bug. Re-runs now report up-to-date and rewrite nothing, and the two installers produce byte-identical installs that each recognizes as current.

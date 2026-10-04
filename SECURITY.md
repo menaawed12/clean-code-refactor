@@ -23,6 +23,7 @@ Out of scope: vulnerabilities in downstream applications reviewed with this skil
 - The package is local-first: no installer, validator, or profiler executes remote code or contacts external services.
 - Installers write only to declared, contained destinations and refuse to traverse symlinks/junctions out of the selected root.
 - Owned installed files are recorded with hashes in a receipt; user modifications are never silently overwritten.
-- Release assets are built in GitHub Actions from the tagged commit and published with SHA-256 checksums and signed build-provenance attestations (`gh attestation verify`).
+- Release assets are built in GitHub Actions from the tagged commit and published with SHA-256 checksums, signed build-provenance attestations (`gh attestation verify`), and a CycloneDX SBOM.
+- Installed copies can be checked against their receipts and the package with `install.sh --verify` or `install.ps1 -Verify`.
 - CI uses read-only permissions and no secrets, and pins actions to commit SHAs.
 - Guidance separates advisory controls from controls that require host-enforced sandboxing (see `references/agent-security.md`).

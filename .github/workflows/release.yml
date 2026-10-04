@@ -9,6 +9,8 @@
 #   clean-code-refactor-<version>-package.zip
 #                                      - the full installable package (installers, registry,
 #                                        policy tooling, and docs), for verified installs
+#   clean-code-refactor-<version>.cdx.json
+#                                      - CycloneDX 1.6 SBOM of the package
 #   SHA256SUMS                         - checksums for every asset
 # Each asset gets a signed SLSA build-provenance attestation. Verify a download with:
 #   gh attestation verify clean-code-refactor-<version>.zip --repo <owner>/<repo>
@@ -72,6 +74,11 @@ jobs:
             --output="dist/clean-code-refactor-${VERSION}-package.zip" "$GITHUB_SHA" \
             SKILL.md LICENSE README.md SECURITY.md CHANGELOG.md .gitattributes \
             references scripts integrations policy docs
+          python3 .github/scripts/generate_sbom.py \
+            --package-zip "dist/clean-code-refactor-${VERSION}-package.zip" \
+            --version "$VERSION" --repository "$GITHUB_REPOSITORY" \
+            --timestamp "$(git log -1 --format=%ct "$GITHUB_SHA")" \
+            --output "dist/clean-code-refactor-${VERSION}.cdx.json"
           # Release notes are this version's CHANGELOG section.
           awk -v heading="## [${VERSION}]" '
             index($0, heading) == 1 { found = 1; next }

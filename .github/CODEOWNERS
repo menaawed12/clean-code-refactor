@@ -1,0 +1,10 @@
+# Every change needs review from a maintainer. The paths below carry extra risk:
+# installers and tools run on user machines, workflows hold release credentials, and
+# SKILL.md and references/ steer coding agents.
+* @menaawed12
+/scripts/ @menaawed12
+/.github/ @menaawed12
+/SKILL.md @menaawed12
+/references/ @menaawed12
+/integrations/ @menaawed12
+/policy/ @menaawed12
