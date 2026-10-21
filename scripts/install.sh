@@ -306,7 +306,9 @@ tool_rewrites=()
 for tool in "${TOOL_SOURCES[@]}"; do
   tool_rewrites+=(-e "s|${tool//./\\.}|$TOOLS_DIR_NAME/${tool##*/}|g")
 done
+# Carriage returns are dropped so a CRLF checkout (Git for Windows) yields the same LF rule as PowerShell.
 rule_body="$(printf '%s\n' "$skill_text" | awk '
+  { sub(/\r$/, "") }
   NR == 1 && /^---$/ { front = 1; next }
   front && /^---$/ { front = 0; next }
   !front { print }

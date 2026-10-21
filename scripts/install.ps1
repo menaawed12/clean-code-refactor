@@ -333,7 +333,8 @@ function Get-RuleBody {
     $referencesDirName = Get-Prop $layout 'referencesDirName'
     $toolsDirName = Get-Prop $layout 'toolsDirName'
 
-    $body = $SkillText -replace '(?s)^---\r?\n.*?\r?\n---\r?\n?', ''
+    # Line endings are normalized so a CRLF checkout (Git for Windows) yields the same LF rule as bash.
+    $body = $SkillText.Replace("`r`n", "`n") -replace '(?s)^---\n.*?\n---\n?', ''
     $body = $body.Replace('references/', "$referencesDirName/")
     foreach ($toolSource in @(Get-Prop (Get-Prop $Registry 'package') 'toolSources')) {
         $toolLink = "$toolsDirName/$(Split-Path -Leaf $toolSource)"
