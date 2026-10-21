@@ -2,7 +2,8 @@
 # Behavioral test suite for scripts/install.sh (bash 3.2+; no external test framework).
 # Covers: fresh install, idempotent re-run, unmanaged skip, forced upgrade with stale +
 # nested reference removal, user-modification protection, dry-run, usage errors, spaces
-# and Unicode paths, symlink containment, user scope with redirected homes, JSON output.
+# and Unicode paths, symlink containment, user scope with redirected homes, JSON output,
+# and the upload bundle for hosts without a command-line install.
 set -u
 
 # The installer prefers XDG_CONFIG_HOME over --user-home; unset it so user-scope tests
@@ -262,6 +263,49 @@ run_installer --verify --editor all --target "$(new_target t19b)"
 assert_eq "T19 'all' with nothing installed does not fail" "$RUN_EXIT" "0"
 run_installer --expect-version 1.0.0 --editor claude --target "$T"
 assert_eq "T19 --expect-version without --verify is a usage error" "$RUN_EXIT" "2"
+
+# ---------------------------------------------------------------- T20 JetBrains Junie target
+T="$(new_target t20)"
+run_installer --editor junie --target "$T"
+assert_eq "T20 junie install exits 0" "$RUN_EXIT" "0"
+check "T20 junie project skill installed" [ -f "$T/.junie/skills/clean-code-refactor/SKILL.md" ]
+FAKE_HOME="$TMP_ROOT/home-t20"
+mkdir -p "$FAKE_HOME"
+run_installer --scope user --editor junie --user-home "$FAKE_HOME"
+assert_eq "T20 junie user install exits 0" "$RUN_EXIT" "0"
+check "T20 junie user skill installed" [ -f "$FAKE_HOME/.junie/skills/clean-code-refactor/SKILL.md" ]
+
+# ---------------------------------------------------------------- T21 upload bundle
+B="$TMP_ROOT/bundle t21"
+run_installer --bundle "$B" --dry-run
+assert_eq "T21 bundle dry run exits 0" "$RUN_EXIT" "0"
+check_not "T21 bundle dry run writes nothing" [ -e "$B" ]
+run_installer --bundle "$B" --json
+assert_eq "T21 bundle exits 0" "$RUN_EXIT" "0"
+check "T21 bundle JSON names the zip" output_has "\"kind\": \"skill-zip\""
+check "T21 bundled skill folder matches the package" cmp -s "$repository_root/SKILL.md" "$B/clean-code-refactor/SKILL.md"
+check "T21 bundled references copied" [ -f "$B/clean-code-refactor/references/agent-security.md" ]
+check "T21 bundled tools copied" [ -f "$B/clean-code-refactor/scripts/profile-repository.sh" ]
+check "T21 ChatGPT instructions written" cmp -s "$repository_root/integrations/chatgpt/instructions.md" "$B/chatgpt-instructions.md"
+check "T21 skill zip written" [ -f "$B/clean-code-refactor-$PKG_VERSION.zip" ]
+if command -v python3 >/dev/null 2>&1; then
+  check "T21 zip holds the skill under one top-level folder" python3 -c '
+import sys, zipfile
+names = [n for n in zipfile.ZipFile(sys.argv[1]).namelist() if not n.endswith("/")]
+sys.exit(0 if "clean-code-refactor/SKILL.md" in names and all(n.startswith("clean-code-refactor/") for n in names) else 1)
+' "$B/clean-code-refactor-$PKG_VERSION.zip"
+else
+  skip_test "T21 zip layout (python3 not available)"
+fi
+check_not "T21 no staging folder left behind" ls -d "$B"/.clean-code-refactor-bundle.tmp.* 2>/dev/null
+run_installer --bundle "$B"
+assert_eq "T21 existing bundle is not replaced without --force" "$RUN_EXIT" "2"
+printf 'stale' > "$B/clean-code-refactor/stale.md"
+run_installer --bundle "$B" --force
+assert_eq "T21 forced bundle exits 0" "$RUN_EXIT" "0"
+check_not "T21 forced bundle drops stale files" [ -e "$B/clean-code-refactor/stale.md" ]
+run_installer --bundle "$B" --verify
+assert_eq "T21 --bundle with --verify is a usage error" "$RUN_EXIT" "2"
 
 # ---------------------------------------------------------------- T15 bash profiler
 profiler="$repository_root/scripts/profile-repository.sh"

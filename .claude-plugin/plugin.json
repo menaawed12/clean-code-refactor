@@ -1,0 +1,11 @@
+{
+  "name": "clean-code-refactor",
+  "displayName": "Clean Code Refactor",
+  "version": "1.4.0",
+  "description": "Behavior-preserving refactoring, review remediation, lint and duplicate-code fixes, and security hardening for code in any major language.",
+  "author": { "name": "Clean Code Refactor Skill" },
+  "homepage": "https://github.com/menaawed12/clean-code-refactor",
+  "repository": "https://github.com/menaawed12/clean-code-refactor",
+  "license": "MIT",
+  "keywords": ["refactoring", "code-review", "lint", "security", "agent-skills"]
+}

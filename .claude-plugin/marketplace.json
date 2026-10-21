@@ -1,0 +1,14 @@
+{
+  "name": "clean-code-refactor",
+  "description": "The clean-code-refactor skill, packaged as a Claude Code plugin.",
+  "owner": { "name": "Clean Code Refactor Skill", "url": "https://github.com/menaawed12/clean-code-refactor" },
+  "plugins": [
+    {
+      "name": "clean-code-refactor",
+      "source": "./",
+      "description": "Behavior-preserving refactoring, review remediation, lint and duplicate-code fixes, and security hardening for code in any major language.",
+      "category": "development",
+      "tags": ["refactoring", "code-review", "security"]
+    }
+  ]
+}

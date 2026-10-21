@@ -352,6 +352,41 @@ try {
     try { $tamperReport = $tamperRun.Output | ConvertFrom-Json } catch { $tamperReport = $null }
     Assert-True 'T19 tampering is reported as modified' (($tamperRun.ExitCode -eq 1) -and ($null -ne $tamperReport) -and (@($tamperReport.results)[0].status -eq 'modified'))
 
+    # ---------------------------------------------------------------- T20 JetBrains Junie target
+    $junieTarget = New-TempDirectory; Register-Cleanup $junieTarget
+    $exitCode = Invoke-Installer -Arguments @('-Editor', 'junie', '-TargetPath', $junieTarget)
+    Assert-True 'T20 junie project skill installed' (($exitCode -eq 0) -and (Test-Path -LiteralPath (Join-Path $junieTarget '.junie/skills/clean-code-refactor/SKILL.md')))
+    $junieHome = New-TempDirectory; Register-Cleanup $junieHome
+    $exitCode = Invoke-Installer -Arguments @('-Scope', 'user', '-Editor', 'junie', '-UserHome', $junieHome)
+    Assert-True 'T20 junie user skill installed' (($exitCode -eq 0) -and (Test-Path -LiteralPath (Join-Path $junieHome '.junie/skills/clean-code-refactor/SKILL.md')))
+
+    # ---------------------------------------------------------------- T21 upload bundle
+    $bundleParent = New-TempDirectory; Register-Cleanup $bundleParent
+    $bundleDir = Join-Path $bundleParent 'bundle t21'
+    $exitCode = Invoke-Installer -Arguments @('-BundlePath', $bundleDir, '-DryRun')
+    Assert-True 'T21 bundle dry run writes nothing' (($exitCode -eq 0) -and -not (Test-Path -LiteralPath $bundleDir))
+    $bundleRun = Invoke-InstallerOutput -Arguments @('-BundlePath', $bundleDir, '-OutputFormat', 'Json')
+    $bundleReport = $null
+    try { $bundleReport = $bundleRun.Output | ConvertFrom-Json } catch { $bundleReport = $null }
+    Assert-True 'T21 bundle JSON lists three outputs' (($bundleRun.ExitCode -eq 0) -and ($null -ne $bundleReport) -and (@($bundleReport.outputs).Count -eq 3))
+    $bundledSkill = Join-Path $bundleDir 'clean-code-refactor/SKILL.md'
+    Assert-True 'T21 bundled skill folder matches the package' ((Test-Path -LiteralPath $bundledSkill) -and ((Get-FileHash -LiteralPath $bundledSkill).Hash -eq (Get-FileHash -LiteralPath (Join-Path $repositoryRoot 'SKILL.md')).Hash))
+    Assert-True 'T21 bundled tools copied' (Test-Path -LiteralPath (Join-Path $bundleDir 'clean-code-refactor/scripts/profile-repository.ps1'))
+    Assert-True 'T21 ChatGPT instructions written' ((Get-FileHash -LiteralPath (Join-Path $bundleDir 'chatgpt-instructions.md')).Hash -eq (Get-FileHash -LiteralPath (Join-Path $repositoryRoot 'integrations/chatgpt/instructions.md')).Hash)
+    $zipPath = Join-Path $bundleDir "clean-code-refactor-$version.zip"
+    $zipEntries = @()
+    if (Test-Path -LiteralPath $zipPath) {
+        Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
+        $archive = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
+        try { $zipEntries = @($archive.Entries | ForEach-Object { $_.FullName }) } finally { $archive.Dispose() }
+    }
+    Assert-True 'T21 zip holds the skill under one top-level folder with forward slashes' (($zipEntries -contains 'clean-code-refactor/SKILL.md') -and -not ($zipEntries | Where-Object { -not $_.StartsWith('clean-code-refactor/') -or $_.Contains('\') }))
+    Assert-True 'T21 existing bundle is not replaced without -Force' ((Invoke-Installer -Arguments @('-BundlePath', $bundleDir)) -eq 2)
+    Set-Content -LiteralPath (Join-Path $bundleDir 'clean-code-refactor/stale.md') -Value 'stale'
+    $exitCode = Invoke-Installer -Arguments @('-BundlePath', $bundleDir, '-Force')
+    Assert-True 'T21 forced bundle drops stale files' (($exitCode -eq 0) -and -not (Test-Path -LiteralPath (Join-Path $bundleDir 'clean-code-refactor/stale.md')))
+    Assert-True 'T21 -BundlePath with -Verify is a usage error' ((Invoke-Installer -Arguments @('-BundlePath', $bundleDir, '-Verify')) -eq 2)
+
     # ---------------------------------------------------------------- profiler smoke test
     $fakeRepo = New-TempDirectory; Register-Cleanup $fakeRepo
     New-Item -ItemType Directory -Path (Join-Path $fakeRepo 'src/auth'), (Join-Path $fakeRepo '.github/workflows'), (Join-Path $fakeRepo 'docs'), (Join-Path $fakeRepo 'node_modules/should-not-be-read') -Force | Out-Null

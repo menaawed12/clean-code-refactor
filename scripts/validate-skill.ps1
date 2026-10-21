@@ -196,6 +196,30 @@ if ((Get-Content -LiteralPath $changelogPath -Raw) -notmatch ('(?m)^## \[' + [re
     throw "CHANGELOG.md has no '## [$packageVersion]' entry."
 }
 
+# --------------------------- host packaging --------------------------------
+# The Claude Code plugin and marketplace manifests, and the paste-ready ChatGPT
+# instructions, carry the package name and version too.
+
+$packageName = Get-Prop $package 'name'
+foreach ($manifestName in @('plugin.json', 'marketplace.json')) {
+    $manifestPath = Join-Path $RepositoryRoot ".claude-plugin/$manifestName"
+    if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { throw "Required file is missing: $manifestPath" }
+    try { $null = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json } catch { throw ".claude-plugin/$manifestName is not valid JSON: $($_.Exception.Message)" }
+}
+$pluginManifest = Get-Content -LiteralPath (Join-Path $RepositoryRoot '.claude-plugin/plugin.json') -Raw | ConvertFrom-Json
+if ((Get-Prop $pluginManifest 'name') -ne $packageName) { throw ".claude-plugin/plugin.json name '$(Get-Prop $pluginManifest 'name')' does not match registry package name '$packageName'." }
+if ((Get-Prop $pluginManifest 'version') -ne $packageVersion) { throw ".claude-plugin/plugin.json version '$(Get-Prop $pluginManifest 'version')' does not match registry version '$packageVersion'." }
+$marketplaceManifest = Get-Content -LiteralPath (Join-Path $RepositoryRoot '.claude-plugin/marketplace.json') -Raw | ConvertFrom-Json
+$marketplaceEntry = @(Get-Prop $marketplaceManifest 'plugins') | Where-Object { (Get-Prop $_ 'name') -eq $packageName }
+if (-not $marketplaceEntry -or (Get-Prop $marketplaceEntry 'source') -ne './') { throw ".claude-plugin/marketplace.json must list '$packageName' with source './' (the repository root, where SKILL.md is)." }
+
+$chatGptPath = Join-Path $RepositoryRoot 'integrations/chatgpt/instructions.md'
+if (-not (Test-Path -LiteralPath $chatGptPath -PathType Leaf)) { throw "Required file is missing: $chatGptPath" }
+$chatGptText = [System.IO.File]::ReadAllText($chatGptPath)
+# Custom GPT instructions accept at most 8000 characters.
+if ($chatGptText.Length -gt 8000) { throw "integrations/chatgpt/instructions.md is $($chatGptText.Length) characters; custom GPT instructions accept at most 8000." }
+if (-not $chatGptText.StartsWith("<!-- $packageName ${packageVersion}:")) { throw "integrations/chatgpt/instructions.md must start with '<!-- $packageName ${packageVersion}:' so pasted copies show their version." }
+
 $layout = Get-Prop $registry 'ruleFileLayout'
 $referencesDirName = Get-Prop $layout 'referencesDirName'
 $toolsDirName = Get-Prop $layout 'toolsDirName'
