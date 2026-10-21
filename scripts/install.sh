@@ -31,7 +31,7 @@ Options:
   -e, --editor NAME     Target id, comma/space list, or 'all' (every target for the
                         scope) or 'detected' (editors already configured on this machine).
                         Ids: agents, cursor, copilot, claude, codex, windsurf, cline,
-                        roo, continue, amazonq, opencode, kilo.
+                        roo, continue, amazonq, opencode, kilo, junie.
   -t, --target PATH     Target project directory (default: current directory).
       --scope SCOPE     'project' (default) or 'user' (per-user global install where
                         the registry declares it).
@@ -52,6 +52,10 @@ Options:
       --policy FILE     Organization policy (JSON) to install next to the skill as
                         policy.json. Validated with scripts/check-policy.ps1 when
                         PowerShell is available. Later runs without --policy keep it.
+      --bundle DIR      Instead of installing, write upload-ready copies to DIR: the
+                        skill folder, a zip of it (for claude.ai, the Claude desktop
+                        app, and ChatGPT skills), and chatgpt-instructions.md (for a
+                        custom GPT or ChatGPT project). Ignores --editor and --scope.
   -h, --help            Show this help.
 
 Exit codes: 0 = success (skips allowed), 1 = target failure, 2 = usage/preflight error.
@@ -71,6 +75,7 @@ continue|rule-file|project|.continue/rules/clean-code-refactor.md|continue|-|-|-
 amazonq|rule-file|project|.amazonq/rules/clean-code-refactor.md|plain|-|-|-|-|project:.amazonq|-
 opencode|skill-folder|project|.opencode/skills/clean-code-refactor|-|-|-|-|-|project:.opencode,xdg-config:opencode|-
 kilo|rule-file|project|.kilo/rules/clean-code-refactor.md|plain|-|-|kilo.jsonc|.kilo/rules/clean-code-refactor.md|project:.kilo,project:kilo.jsonc|-
+junie|skill-folder|project|.junie/skills/clean-code-refactor|-|-|-|-|-|project:.junie,home:.junie|-
 PROJECT_TARGETS_EOF
 )
 
@@ -81,6 +86,7 @@ copilot|skill-folder|home|.copilot/skills/clean-code-refactor|-|-|-|-|-|home:.co
 claude|skill-folder|home|.claude/skills/clean-code-refactor|-|-|-|-|-|home:.claude|verify-against-docs
 codex|skill-folder|codex-home|skills/clean-code-refactor|-|-|-|-|-|codex-home:skills|-
 opencode|skill-folder|xdg-config|opencode/skills/clean-code-refactor|-|-|-|-|-|xdg-config:opencode|verify-against-docs
+junie|skill-folder|home|.junie/skills/clean-code-refactor|-|-|-|-|-|home:.junie|verify-against-docs
 USER_TARGETS_EOF
 )
 
@@ -96,6 +102,7 @@ json_out=0
 policy_file=""
 verify_mode=0
 expect_version=""
+bundle_dir=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -111,6 +118,7 @@ while [[ $# -gt 0 ]]; do
     --verify) verify_mode=1; shift ;;
     --expect-version) [ $# -ge 2 ] || { echo "Error: --expect-version needs a version." >&2; exit 2; }; expect_version="$2"; shift 2 ;;
     --policy) [ $# -ge 2 ] || { echo "Error: --policy needs a file." >&2; exit 2; }; policy_file="$2"; shift 2 ;;
+    --bundle) [ $# -ge 2 ] || { echo "Error: --bundle needs a directory." >&2; exit 2; }; bundle_dir="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -131,6 +139,10 @@ if [ "$verify_mode" -eq 1 ]; then
 fi
 
 [[ "$scope" == "project" || "$scope" == "user" ]] || fail_usage "Unknown scope: $scope"
+if [ -n "$bundle_dir" ]; then
+  [ "$verify_mode" -eq 0 ] || fail_usage "--bundle writes files; do not combine it with --verify."
+  [ "$list_only" -eq 0 ] || fail_usage "--bundle cannot be combined with --list."
+fi
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 skill_source="$repository_root/$SKILL_FILE"
@@ -468,6 +480,89 @@ write_file_if_changed() {
   return 0
 }
 
+# --------------------------- bundle (upload-ready copies) -----------------
+# Hosts that cannot be installed into from the command line (claude.ai, the Claude and
+# ChatGPT apps) take an uploaded skill zip or pasted instructions. --bundle writes both.
+
+BUNDLE_SKILL_DIR='clean-code-refactor'
+BUNDLE_ZIP="clean-code-refactor-$PKG_VERSION.zip"
+BUNDLE_CHATGPT='chatgpt-instructions.md'
+CHATGPT_SOURCE='integrations/chatgpt/instructions.md'
+
+make_zip() {
+  # make_zip <parent-dir> <folder-name> <zip-path>; entries are stored as <folder-name>/...
+  local parent="$1" name="$2" zip_path="$3"
+  if command -v zip >/dev/null 2>&1; then
+    (cd "$parent" && zip -qrX "$zip_path" "$name")
+  elif command -v python3 >/dev/null 2>&1; then
+    (cd "$parent" && python3 -m zipfile -c "$zip_path" "$name")
+  else
+    echo "Neither zip nor python3 is available to create $zip_path." >&2
+    return 1
+  fi
+}
+
+run_bundle() {
+  local out_dir stage f rel status
+  for f in "$repository_root/LICENSE" "$repository_root/$CHATGPT_SOURCE"; do
+    [ -f "$f" ] || fail_usage "Required source is missing: $f"
+  done
+  if [ -e "$bundle_dir" ] && [ ! -d "$bundle_dir" ]; then fail_usage "Bundle path is not a directory: $bundle_dir"; fi
+  [ -L "$bundle_dir" ] && fail_usage "Bundle directory must not be a symlink: $bundle_dir"
+  for f in "$BUNDLE_SKILL_DIR" "$BUNDLE_ZIP" "$BUNDLE_CHATGPT"; do
+    [ -L "$bundle_dir/$f" ] && fail_usage "Refusing to replace a symlink: $bundle_dir/$f"
+    if [ -e "$bundle_dir/$f" ] && [ "$force" -eq 0 ]; then
+      fail_usage "$bundle_dir/$f already exists; use --force to replace it."
+    fi
+  done
+
+  status="written"
+  [ "$dry_run" -eq 1 ] && status="planned"
+  if [ "$dry_run" -eq 0 ]; then
+    mkdir -p "$bundle_dir"
+    out_dir="$(cd "$bundle_dir" && pwd -P)"
+    stage="$out_dir/.clean-code-refactor-bundle.tmp.$$"
+    rm -rf "$stage"
+    mkdir -p "$stage/$BUNDLE_SKILL_DIR"
+    for rel in "${SOURCE_RELS[@]}" LICENSE; do
+      copy_file_verified "$repository_root/$rel" "$stage/$BUNDLE_SKILL_DIR/$rel" || { rm -rf "$stage"; exit 1; }
+    done
+    if [ -n "$policy_source" ]; then
+      copy_file_verified "$policy_source" "$stage/$BUNDLE_SKILL_DIR/policy.json" || { rm -rf "$stage"; exit 1; }
+    fi
+    if ! make_zip "$stage" "$BUNDLE_SKILL_DIR" "$stage/$BUNDLE_ZIP"; then
+      rm -rf "$stage"
+      echo "Error: could not create the skill zip; nothing was written." >&2
+      exit 1
+    fi
+    copy_file_verified "$repository_root/$CHATGPT_SOURCE" "$stage/$BUNDLE_CHATGPT" || { rm -rf "$stage"; exit 1; }
+    for f in "$BUNDLE_SKILL_DIR" "$BUNDLE_ZIP" "$BUNDLE_CHATGPT"; do
+      rm -rf "${out_dir:?}/$f"
+      mv "$stage/$f" "$out_dir/$f"
+    done
+    rm -rf "$stage"
+  else
+    out_dir="$bundle_dir"
+  fi
+
+  if [ "$json_out" -eq 1 ]; then
+    printf '{ "mode": "bundle", "package": "%s", "dryRun": %s, "directory": "%s", "outputs": [\n' \
+      "$PKG_VERSION" "$([ "$dry_run" -eq 1 ] && echo true || echo false)" "$(json_escape "$out_dir")"
+    printf '  { "kind": "skill-folder", "path": "%s", "status": "%s" },\n' "$(json_escape "$out_dir/$BUNDLE_SKILL_DIR")" "$status"
+    printf '  { "kind": "skill-zip", "path": "%s", "status": "%s" },\n' "$(json_escape "$out_dir/$BUNDLE_ZIP")" "$status"
+    printf '  { "kind": "chatgpt-instructions", "path": "%s", "status": "%s" }\n' "$(json_escape "$out_dir/$BUNDLE_CHATGPT")" "$status"
+    printf '] }\n'
+  else
+    echo "[$status] skill folder -> $out_dir/$BUNDLE_SKILL_DIR"
+    echo "[$status] skill zip (claude.ai, Claude desktop, ChatGPT skills) -> $out_dir/$BUNDLE_ZIP"
+    echo "[$status] ChatGPT instructions (custom GPT or project) -> $out_dir/$BUNDLE_CHATGPT"
+    if [ "$dry_run" -eq 1 ]; then echo "Dry run: no files were written."; fi
+  fi
+  exit 0
+}
+
+if [ -n "$bundle_dir" ]; then run_bundle; fi
+
 # --------------------------- selection -------------------------------------
 
 requested=""
@@ -483,7 +578,7 @@ if [ "${#editors[@]}" -gt 0 ]; then
 fi
 requested="${requested# }"
 
-known_ids="agents cursor copilot claude codex windsurf cline roo continue amazonq opencode kilo"
+known_ids="agents cursor copilot claude codex windsurf cline roo continue amazonq opencode kilo junie"
 
 # Trailing newline is REQUIRED: read drops a final record that lacks one.
 table_for_scope() {

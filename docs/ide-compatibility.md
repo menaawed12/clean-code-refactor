@@ -24,6 +24,19 @@ Statuses:
 | Amazon Q Developer | `.amazonq/rules/clean-code-refactor.md` | — | Markdown rule |
 | OpenCode | `.opencode/skills/clean-code-refactor/` | `$XDG_CONFIG_HOME` or `~/.config/opencode/skills/clean-code-refactor/` (verify-against-docs) | skill folder |
 | Kilo Code | `.kilo/rules/clean-code-refactor.md` + `kilo.jsonc` entry | — | Markdown rule |
+| JetBrains Junie | `.junie/skills/clean-code-refactor/` | `~/.junie/skills/clean-code-refactor/` (verify-against-docs) | skill folder |
+
+## Packaged and uploaded installs
+
+These are not registry targets, because no installer writes them into an editor folder:
+
+| Host | Package | Built by |
+| --- | --- | --- |
+| Claude Code plugin | `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json` at the repository root (the plugin is the root `SKILL.md`) | Committed; `scripts/validate-skill.ps1` checks the name and version |
+| claude.ai, the Claude desktop app, ChatGPT skills | `clean-code-refactor-<version>.zip` (one `clean-code-refactor/` folder) | `install.sh --bundle DIR`, `install.ps1 -BundlePath DIR`, and every release |
+| ChatGPT custom GPTs and projects | `integrations/chatgpt/instructions.md` (under 8,000 characters) plus `SKILL.md` and `references/` as knowledge files | Committed; copied by `--bundle` / `-BundlePath` |
+
+Step-by-step instructions for each host, including Codex, Zed, and Aider, are in [install-by-host.md](install-by-host.md).
 
 ## Choosing a target
 
@@ -46,13 +59,13 @@ User-scope destinations for GitHub Copilot (`~/.copilot/skills/`), Claude Code (
 
 The following families are planned or manual-workflow targets; none have declared destinations in the registry yet, and none are written by `-Editor all`:
 
-- JetBrains IDEs (IntelliJ IDEA, PyCharm, WebStorm, PhpStorm, Rider, GoLand, CLion, RubyMine, RustRover, DataGrip, Android Studio) via AI Assistant/Junie skill import — planned, certified per IDE and plugin version.
+- JetBrains AI Assistant (as distinct from Junie, which the `junie` target covers) — planned, certified per IDE and plugin version.
 - Visual Studio (Copilot/agent customization) — planned; manual CLI fallback meanwhile.
-- Zed (personal instructions) — planned.
+- Zed — reads the root `AGENTS.md` written by the `agents` target; a native target for Zed's personal rules library is planned.
 - VS Code forks (VSCodium, Code-OSS) — manual; do not assume Copilot availability or identical paths.
 - Other editors (Sublime Text, Notepad++, Vim/Neovim, Emacs, Helix, Kate, Geany, Eclipse, Theia, NetBeans, Qt Creator, RStudio/Positron, JupyterLab) — documented plugin or terminal workflow.
 - Browser/remote IDEs (Codespaces, Gitpod, code-server, cloud workspaces) — install inside the actual agent execution environment; remote hosts are separate installation contexts.
-- Terminal agents (Claude Code, Codex, Copilot CLI, OpenCode, Gemini CLI, Amazon Q, Aider) — covered where a native user-level destination is declared above. Gemini CLI is covered by the `agents` target.
+- Terminal agents (Claude Code, Codex, Copilot CLI, OpenCode, Gemini CLI, Junie CLI, Amazon Q, Aider) — covered where a native user-level destination is declared above. Gemini CLI is covered by the `agents` target; Aider loads the installed `SKILL.md` with `--read`.
 - Windsurf skill folders — Windsurf's documentation describes native skill folders. The `windsurf` target still installs a rule file until those locations are confirmed from a primary source.
 
 Additional IDEs can be added by extending `integrations/registry.json` and running `pwsh ./scripts/sync-bash-installer.ps1`. The PowerShell installer reads the registry directly; `scripts/validate-skill.ps1` fails if the bash installer's generated tables are out of date.

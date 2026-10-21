@@ -54,6 +54,9 @@ bash ./scripts/profile-repository.sh --path /path/to/project
 - `references/agent-security.md` — agent trust boundaries: untrusted repository content, tool-output injection, command discovery versus execution, and scoped permissions.
 - `integrations/registry.json` — machine-readable editor/agent target registry (single source of truth for installers).
 - `docs/ide-compatibility.md` — human-readable compatibility summary and roadmap.
+- `docs/install-by-host.md` — install steps for each AI tool, including claude.ai, ChatGPT, VS Code, Codex, OpenCode, JetBrains, Zed, and Aider.
+- `.claude-plugin/` — Claude Code plugin and marketplace manifests, so the repository installs as a Claude Code plugin.
+- `integrations/chatgpt/instructions.md` — paste-ready instructions for a custom GPT or ChatGPT project.
 - `SECURITY.md` — vulnerability reporting route and design commitments.
 - `CHANGELOG.md` — release history; the version itself lives in `integrations/registry.json`.
 - `scripts/validate-skill.ps1` — validates package structure, links, registry/installer parity, and required instructions.
@@ -68,6 +71,8 @@ bash ./scripts/profile-repository.sh --path /path/to/project
 ## Install
 
 Choose the installation method that fits your environment. All methods use the same canonical `SKILL.md`, references, and local profiler; none executes remote code.
+
+**Using a specific AI tool?** [docs/install-by-host.md](docs/install-by-host.md) gives the shortest path for each one: Claude Code (installer or plugin), claude.ai and the Claude desktop app, ChatGPT (skills, custom GPTs, and projects), Codex, VS Code and Visual Studio with GitHub Copilot, Cursor, Windsurf, OpenCode, Gemini CLI, JetBrains IDEs with Junie, Zed, Aider, and the other supported extensions.
 
 ### 1. Windows PowerShell
 
@@ -103,7 +108,30 @@ cd clean-code-refactor
 bash ./scripts/install.sh --editor all --target /path/to/project
 ```
 
-### 5. Manual or air-gapped installation
+### 5. Claude Code plugin
+
+This repository is also a Claude Code plugin marketplace. In Claude Code:
+
+```text
+/plugin marketplace add menaawed12/clean-code-refactor
+/plugin install clean-code-refactor@clean-code-refactor
+```
+
+### 6. Upload to claude.ai or ChatGPT
+
+Chat apps have no folder an installer can write to, so build upload-ready files instead:
+
+```bash
+bash ./scripts/install.sh --bundle ./dist
+```
+
+```powershell
+.\scripts\install.ps1 -BundlePath .\dist
+```
+
+This writes the skill folder, `clean-code-refactor-<version>.zip` (upload it as a skill in claude.ai, the Claude desktop app, or ChatGPT where skills are available), and `chatgpt-instructions.md` (paste it into a custom GPT or ChatGPT project). Existing outputs are kept unless you pass `--force` / `-Force`. Steps for each app are in [docs/install-by-host.md](docs/install-by-host.md).
+
+### 7. Manual or air-gapped installation
 
 Each [GitHub release](https://github.com/menaawed12/clean-code-refactor/releases) ships two zips, a `SHA256SUMS` file, and a signed build-provenance attestation for every asset:
 
@@ -137,6 +165,7 @@ Supported editor integrations are declared in `integrations/registry.json` and s
 | Amazon Q Developer | `.amazonq/rules/clean-code-refactor.md` |
 | OpenCode | `.opencode/skills/clean-code-refactor/` |
 | Kilo Code | `.kilo/rules/clean-code-refactor.md` and a `kilo.jsonc` `instructions` entry |
+| JetBrains Junie | `.junie/skills/clean-code-refactor/`; user scope `~/.junie/skills/clean-code-refactor/` |
 
 ### Verifying installed copies
 
@@ -192,7 +221,7 @@ bash ./scripts/install.sh --editor codex   # user-scoped by default
 - **Exit codes:** `0` success (intentional skips allowed), `1` one or more targets failed, `2` usage or preflight error. Preflight failures abort before anything is written.
 - **Upgrades:** installs record a `.clean-code-refactor-install.json` receipt with version and file hashes. A re-run updates owned files, removes files the package no longer ships (including nested leftovers), and preserves unrelated files. Without `-Force`/`--force` your modifications to owned files are detected and preserved; use force to overwrite.
 - **Safety:** destinations must resolve inside the declared root; symlinked or junctioned path components are refused, and a failed preflight leaves the filesystem untouched.
-- **User scope:** available where the registry declares it (the shared `agents` standard, GitHub Copilot, Claude Code, Cursor, OpenCode, Codex). For most setups, `--scope user --editor agents` plus your agent's own target is enough; see [docs/ide-compatibility.md](docs/ide-compatibility.md) for which agents read which folders. Redirect homes with `-UserHome`/`--user-home` (and `-CodexHome`/`--codex-home`) for tests or portable installs. Destinations marked `verify-against-docs` should be confirmed against your installed editor's documentation. Global availability never implies automatic execution or elevated privileges.
+- **User scope:** available where the registry declares it (the shared `agents` standard, GitHub Copilot, Claude Code, Cursor, OpenCode, Codex, JetBrains Junie). For most setups, `--scope user --editor agents` plus your agent's own target is enough; see [docs/ide-compatibility.md](docs/ide-compatibility.md) for which agents read which folders. Redirect homes with `-UserHome`/`--user-home` (and `-CodexHome`/`--codex-home`) for tests or portable installs. Destinations marked `verify-against-docs` should be confirmed against your installed editor's documentation. Global availability never implies automatic execution or elevated privileges.
 
 Use `-Force` or `--force` only when replacing this skill's previously installed files. The installers never overwrite unrelated instructions.
 

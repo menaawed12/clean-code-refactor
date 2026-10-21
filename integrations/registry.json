@@ -230,6 +230,28 @@
           ]
         }
       }
+    },
+    "junie": {
+      "label": "JetBrains Junie (IntelliJ IDEA, PyCharm, WebStorm, and other JetBrains IDEs; Junie CLI)",
+      "kind": "skill-folder",
+      "scopes": {
+        "project": {
+          "root": "project",
+          "path": ".junie/skills/clean-code-refactor",
+          "detect": [
+            { "root": "project", "path": ".junie" },
+            { "root": "home", "path": ".junie" }
+          ]
+        },
+        "user": {
+          "root": "home",
+          "path": ".junie/skills/clean-code-refactor",
+          "verification": "verify-against-docs",
+          "detect": [
+            { "root": "home", "path": ".junie" }
+          ]
+        }
+      }
     }
   }
 }

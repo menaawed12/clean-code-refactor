@@ -50,6 +50,11 @@
 .PARAMETER OutputFormat
     'Text' (default) or 'Json' (machine-readable plan/result).
 
+.PARAMETER BundlePath
+    Instead of installing, write upload-ready copies to this directory: the skill folder, a
+    zip of it (for claude.ai, the Claude desktop app, and ChatGPT skills), and
+    chatgpt-instructions.md (for a custom GPT or ChatGPT project). Ignores -Editor and -Scope.
+
 .EXITCODES
     0 = all requested targets installed/updated or intentionally skipped.
     1 = one or more targets failed during execution.
@@ -85,7 +90,9 @@ param(
     [string]$PolicyFile,
 
     [ValidateSet('Text', 'Json')]
-    [string]$OutputFormat = 'Text'
+    [string]$OutputFormat = 'Text',
+
+    [string]$BundlePath
 )
 
 $ErrorActionPreference = 'Stop'
@@ -93,6 +100,8 @@ $script:HadFailure = $false
 if ($ExpectVersion -and -not $Verify) { Write-Error '-ExpectVersion requires -Verify.' -ErrorAction Continue; exit 2 }
 if ($Verify -and $DryRun) { Write-Error '-Verify is read-only; do not combine it with -DryRun.' -ErrorAction Continue; exit 2 }
 if ($Verify) { $Force = $false }
+if ($BundlePath -and $Verify) { Write-Error '-BundlePath writes files; do not combine it with -Verify.' -ErrorAction Continue; exit 2 }
+if ($BundlePath -and $List) { Write-Error '-BundlePath cannot be combined with -List.' -ErrorAction Continue; exit 2 }
 $isWindowsOs = ($env:OS -eq 'Windows_NT')
 
 function Get-Prop {
@@ -451,6 +460,88 @@ function Test-UnitUpToDate {
     return $true
 }
 
+function Invoke-Bundle {
+    <#
+        Hosts that cannot be installed into from the command line (claude.ai, the Claude and
+        ChatGPT apps) take an uploaded skill zip or pasted instructions. Writes both, staged
+        in a temporary folder so a failure leaves earlier outputs untouched.
+    #>
+    param([string]$OutputDirectory, [string]$Version, [string]$RepositoryRoot, [string[]]$SourceRelatives, [string]$PolicySource)
+    $skillDirName = 'clean-code-refactor'
+    $zipName = "clean-code-refactor-$Version.zip"
+    $chatGptName = 'chatgpt-instructions.md'
+    $chatGptSource = Join-UnderRoot -Root $RepositoryRoot -RelativePath 'integrations/chatgpt/instructions.md'
+    $licenseSource = Join-Path $RepositoryRoot 'LICENSE'
+    foreach ($path in @($chatGptSource, $licenseSource)) {
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Required source is missing: $path" }
+    }
+    if (Test-Path -LiteralPath $OutputDirectory) {
+        $outItem = Get-Item -LiteralPath $OutputDirectory -Force
+        if (-not $outItem.PSIsContainer) { throw "Bundle path is not a directory: $OutputDirectory" }
+        if (($outItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { throw "Bundle directory must not be a symlink: $OutputDirectory" }
+    }
+    $outDir = Resolve-FullDirectoryPath -PathValue $OutputDirectory
+    foreach ($name in @($skillDirName, $zipName, $chatGptName)) {
+        $existing = Join-Path $outDir $name
+        if (Test-Path -LiteralPath $existing) {
+            if (((Get-Item -LiteralPath $existing -Force).Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { throw "Refusing to replace a symlink: $existing" }
+            if (-not $Force) { throw "$existing already exists; use -Force to replace it." }
+        }
+    }
+
+    $status = if ($DryRun) { 'planned' } else { 'written' }
+    if (-not $DryRun) {
+        if (-not (Test-Path -LiteralPath $outDir)) { New-Item -ItemType Directory -Path $outDir -Force | Out-Null }
+        $stage = Join-Path $outDir ".clean-code-refactor-bundle.tmp.$PID"
+        if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
+        try {
+            $skillStage = Join-Path $stage $skillDirName
+            foreach ($relative in @($SourceRelatives) + 'LICENSE') {
+                Copy-FileVerified -Source (Join-UnderRoot -Root $RepositoryRoot -RelativePath $relative) -Destination (Join-UnderRoot -Root $skillStage -RelativePath $relative)
+            }
+            if ($PolicySource) { Copy-FileVerified -Source $PolicySource -Destination (Join-Path $skillStage 'policy.json') }
+            # Compress-Archive in Windows PowerShell 5.1 writes backslash entry names, which
+            # other platforms misread; write the entries with forward slashes instead.
+            Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
+            $zip = [System.IO.Compression.ZipFile]::Open((Join-Path $stage $zipName), [System.IO.Compression.ZipArchiveMode]::Create)
+            try {
+                foreach ($file in (Get-ChildItem -LiteralPath $skillStage -Recurse -File -Force | Sort-Object FullName)) {
+                    $entryName = "$skillDirName/" + $file.FullName.Substring($skillStage.Length).TrimStart('\', '/').Replace('\', '/')
+                    $null = [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $file.FullName, $entryName)
+                }
+            } finally {
+                $zip.Dispose()
+            }
+            Copy-FileVerified -Source $chatGptSource -Destination (Join-Path $stage $chatGptName)
+            foreach ($name in @($skillDirName, $zipName, $chatGptName)) {
+                $finalPath = Join-Path $outDir $name
+                if (Test-Path -LiteralPath $finalPath) { Remove-Item -LiteralPath $finalPath -Recurse -Force }
+                Move-Item -LiteralPath (Join-Path $stage $name) -Destination $finalPath
+            }
+        } finally {
+            if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
+        }
+    }
+
+    $outputs = @(
+        [ordered]@{ kind = 'skill-folder'; path = (Join-Path $outDir $skillDirName); status = $status; label = 'skill folder' },
+        [ordered]@{ kind = 'skill-zip'; path = (Join-Path $outDir $zipName); status = $status; label = 'skill zip (claude.ai, Claude desktop, ChatGPT skills)' },
+        [ordered]@{ kind = 'chatgpt-instructions'; path = (Join-Path $outDir $chatGptName); status = $status; label = 'ChatGPT instructions (custom GPT or project)' }
+    )
+    if ($OutputFormat -eq 'Json') {
+        [ordered]@{
+            mode      = 'bundle'
+            package   = $Version
+            dryRun    = [bool]$DryRun
+            directory = $outDir
+            outputs   = @($outputs | ForEach-Object { [ordered]@{ kind = $_.kind; path = $_.path; status = $_.status } })
+        } | ConvertTo-Json -Depth 4
+    } else {
+        foreach ($output in $outputs) { Write-Output "[$($output.status)] $($output.label) -> $($output.path)" }
+        if ($DryRun) { Write-Output 'Dry run: no files were written.' }
+    }
+}
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -484,6 +575,12 @@ try {
         $policyCheck = & (Join-Path $repositoryRoot 'scripts/check-policy.ps1') -PolicyFile $policySource
         if ($LASTEXITCODE -ne 0) { throw "Policy file is invalid: $(($policyCheck | Out-String).Trim())" }
         $policyHash = Get-FileSha256 -PathValue $policySource
+    }
+
+    if ($BundlePath) {
+        $sourceRelatives = @((Get-SourceFileMap -Package $package -SkillSource $skillSource -ReferenceDir $referenceSource -RepositoryRoot $repositoryRoot).Keys | Sort-Object)
+        Invoke-Bundle -OutputDirectory $BundlePath -Version $version -RepositoryRoot $repositoryRoot -SourceRelatives $sourceRelatives -PolicySource $policySource
+        exit 0
     }
 
     $editorIds = @((Get-Prop $registry 'editors').PSObject.Properties.Name | Sort-Object)
