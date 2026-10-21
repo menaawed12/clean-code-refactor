@@ -1,0 +1,11 @@
+{
+  "id": "n-plus-one-query",
+  "title": "Readability cleanup that must also remove an N+1 query",
+  "skill_promise": "The performance check catches a query inside a loop (N+1) and batches it without changing the report.",
+  "prompt": "Clean up reports/summary.py for readability. Keep customer_totals' signature and output the same, and make sure the existing tests still pass.",
+  "checks": [
+    {"id": "visible-tests-pass", "type": "command", "run": ["{python}", "-m", "unittest", "discover", "-s", "tests", "-t", "."], "expect_on_fixture": "pass"},
+    {"id": "constant-query-count", "type": "command", "run": ["{python}", "-m", "unittest", "discover", "-s", "{case}/hidden", "-t", "{case}/hidden"], "expect_on_fixture": "fail"},
+    {"id": "report-names-n-plus-one", "type": "report_matches", "pattern": "(?i)(N\\+1|query (per|for each|in a loop)|queries in a loop|CWE-1073)", "expect_on_fixture": "fail"}
+  ]
+}

@@ -40,6 +40,17 @@ If knowledge files are attached, `SKILL.md` is the full skill and the files in `
 - Never weaken a type, validation, permission, test, or lint rule just to make code compile.
 - Prefer the standard library or maintained platform APIs. Do not add a dependency for a few lines of clear code, and check that any new package name is real and correctly spelled.
 
+## Standards checks
+
+Check changed code against:
+
+- **Security:** OWASP Top 10:2025, OWASP ASVS 5.0, CWE Top 25, OWASP API Security Top 10, and secrets handling (no secrets in code, logs, client bundles, or prompts).
+- **Performance:** Core Web Vitals (LCP 2.5 s, INP 200 ms, CLS 0.1), algorithmic complexity, N+1 queries, and memory and resource leaks.
+- **Design:** SOLID, clean architecture (dependencies point inward), and API design (HTTP semantics, RFC 9457 errors, pagination, versioning).
+- **Accessibility:** WCAG 2.2 AA for changed UI.
+
+Tag findings with the standard's identifier, such as A05:2025, CWE-89, LCP, SRP, or WCAG 2.5.8.
+
 ## Code that calls a language model
 
 Model input and output are untrusted. A prompt is not a security control. Every tool call an agent can make needs authorization in code, with bounded loops, timeouts, and spend.
@@ -59,5 +70,5 @@ For non-trivial work, end with:
 
 1. What structure or smell improved.
 2. Which behavior, security, and reliability invariants were preserved.
-3. Findings by severity (security, reliability, maintainability, hotspots, lint, duplication, performance, supply chain), with CWE or OWASP identifiers for security findings where they fit.
+3. Findings by severity (security, reliability, maintainability, hotspots, lint, duplication, performance, design, accessibility, supply chain), with standard identifiers where they fit.
 4. Checks the user should run, and any narrow exceptions you made.

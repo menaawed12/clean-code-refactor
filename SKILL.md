@@ -98,6 +98,17 @@ Apply [static-quality-rules.md](references/static-quality-rules.md) to changed c
 
 Do not attempt to authenticate with, upload code to, query, or configure an external code-quality service unless the user explicitly asks. Use local repository tooling when already configured; otherwise perform the documented source-level review and report findings by severity.
 
+## Standards Checks
+
+Check changed code against the major security, performance, and design standards. The effective policy's `standards.checks` selects them; all four are on by default, and `security` cannot be switched off.
+
+- **security:** OWASP Top 10, OWASP ASVS at the effective `standards.asvsLevel`, CWE Top 25, OWASP API Security Top 10, MASVS for mobile, and secrets handling. Read [security-standards.md](references/security-standards.md).
+- **performance:** Core Web Vitals budgets (`standards.webVitals`), algorithmic complexity, N+1 queries and data access, memory and resource leaks, and concurrency. Read [performance-standards.md](references/performance-standards.md).
+- **design:** SOLID, clean architecture and module boundaries, cognitive complexity (`gates.cognitiveComplexityMax`), and API design guidelines. Read [design-standards.md](references/design-standards.md).
+- **accessibility:** WCAG 2.2 at the effective `standards.wcagLevel` and UI design consistency. Read the accessibility section of [design-standards.md](references/design-standards.md).
+
+Read only the sections that apply to the change. Report each finding with its severity and standard identifier (for example `A05:2025`, `CWE-89`, `ASVS V8`, `LCP`, `SRP`, or `WCAG 2.5.8`), and list applicable items that were not verified. A disabled check is not run or reported, but a defect it would have caught that is also a security, reliability, or maintainability finding is still reported under the rules above.
+
 ## Cross-Language Hardening
 
 Read [language-hardening.md](references/language-hardening.md) when changing a language, sink, runtime feature, or deployment artifact covered there. Apply only the relevant sections.

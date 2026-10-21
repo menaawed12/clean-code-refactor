@@ -12,12 +12,15 @@ Two optional JSON files adjust the skill's defaults. `policy/policy.schema.json`
 Project policy merge rules (`scripts/check-policy.ps1` applies them):
 
 - Coverage minimum, ASVS level, WCAG level, and minimum dependency age: the higher value wins.
-- Duplication maximum: the lower value wins.
+- Duplication maximum, cognitive complexity maximum, and each Core Web Vitals budget: the lower value wins.
+- Standards checks: combined. A project may add `performance`, `design`, or `accessibility`, never remove one; `security` is always on.
 - Blocking severities and banned APIs: combined. A project cannot redefine an organization banned-API id.
 - Allowed registries: a project may narrow the organization list, never extend it.
 - Approval for new dependencies, exception tickets, SARIF, and standards tags: a project may switch them on, never off.
 - Ticket pattern and organization name: organization policy only.
 - Default profile: a project may choose it, except `legacy-safe` when the organization forbids it.
+
+`standards.checks` selects the checklists in [security-standards.md](security-standards.md), [performance-standards.md](performance-standards.md), and [design-standards.md](design-standards.md). The default is all four checks. An organization may drop `performance`, `design`, or `accessibility` (for example, a backend-only organization drops `accessibility`); the installers' `--checks` / `-Checks` option writes a minimal organization policy that does this when no policy file is given. `standards.webVitals` sets the Core Web Vitals budgets (`lcpMs`, `inpMs`, `cls`; defaults 2500, 200, 0.1) and `gates.cognitiveComplexityMax` the complexity limit for changed functions (default 15).
 
 Banned APIs are literal text, not patterns. Treat a match in changed code as a blocker unless an exception that meets the policy is recorded. An invalid policy file is not applied; report its errors. No policy disables security rules, authorizes commands, network or credential access, or widens the task's scope.
 

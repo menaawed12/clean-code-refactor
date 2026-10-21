@@ -2,7 +2,7 @@
 
 Use this table to tag findings with public identifiers so reviewers and tools can trace them. Tag a finding only when the identifier fits the evidence; an approximate tag is worse than none. Prefer the most specific CWE.
 
-Editions referenced: OWASP Top 10:2025, CWE Top 25 (2025), OWASP Top 10 for LLM Applications 2025, OWASP Top 10 for Agentic Applications 2026, OWASP ASVS 5.0, NIST SP 800-218 Secure Software Development Framework (latest revision), SLSA v1.2, and WCAG 2.2. When the repository or organization mandates a different edition, use that one.
+Editions referenced: OWASP Top 10:2025, CWE Top 25 (2025), OWASP API Security Top 10 2023, OWASP MASVS 2, OWASP Top 10 for LLM Applications 2025, OWASP Top 10 for Agentic Applications 2026, OWASP ASVS 5.0, NIST SP 800-218 Secure Software Development Framework (latest revision), SLSA v1.2, WCAG 2.2, and Core Web Vitals. When the repository or organization mandates a different edition, use that one.
 
 ## Rule Areas to Identifiers
 
@@ -46,3 +46,20 @@ Editions referenced: OWASP Top 10:2025, CWE Top 25 (2025), OWASP Top 10 for LLM 
 - **NIST SSDF (SP 800-218):** practice groups PO (prepare the organization), PS (protect the software), PW (produce well-secured software), and RV (respond to vulnerabilities). Supply-chain and release findings usually map to PS; code-level findings to PW.
 - **SLSA v1.2:** the Build track (provenance and build integrity) and the Source track (version control, history integrity, and review). Cite the level a delivery change affects.
 - **WCAG 2.2:** cite success criteria by number (for example, 2.4.11 Focus Not Obscured, 2.5.8 Target Size) for accessibility findings in the `frontend` and `mobile` profiles.
+
+## Performance and Design Findings
+
+The checklists are in [performance-standards.md](performance-standards.md) and [design-standards.md](design-standards.md); the security checklists behind the tables above are in [security-standards.md](security-standards.md).
+
+| Finding | Identifier |
+| --- | --- |
+| Unbounded allocation, fan-out, page size, or queue | **CWE-770**, CWE-400 |
+| Catastrophic regular-expression backtracking | CWE-1333 |
+| Missing release of a file, socket, connection, or lock | CWE-772, CWE-404 |
+| Memory leak in long-lived state or listeners | CWE-401 |
+| Query or remote call inside a loop (N+1) | CWE-1073; tag the finding `N+1` |
+| Loading, responsiveness, or layout-stability regression | `LCP`, `INP`, `CLS` (Core Web Vitals) |
+| SOLID violation | `SRP`, `OCP`, `LSP`, `ISP`, `DIP` |
+| Dependency pointing outward from domain code, or a module cycle | `clean-architecture`, CWE-1047 for cycles |
+| Function above the cognitive complexity limit | CWE-1121 |
+| Breaking or inconsistent API contract | the adopted guideline's rule ID, for example `AIP-158` or `RFC 9457` |

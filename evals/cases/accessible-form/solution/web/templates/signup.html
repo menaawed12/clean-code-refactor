@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Sign up</title>
+  <style>
+    .page { padding: 16px; font-family: sans-serif; }
+    .field { margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <img src="/static/logo.png" alt="Company logo">
+    <form action="/signup" method="post">
+      <div class="field">
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" autocomplete="email">
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" autocomplete="new-password">
+      </div>
+      <div class="field">
+        <input type="checkbox" id="newsletter" name="newsletter">
+        <label for="newsletter">Send me news</label>
+      </div>
+      <button type="submit" class="btn field">Create account</button>
+    </form>
+  </main>
+</body>
+</html>

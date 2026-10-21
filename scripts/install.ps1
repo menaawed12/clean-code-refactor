@@ -47,6 +47,11 @@
     Organization policy (JSON) to install next to the skill as policy.json. It is validated with
     scripts/check-policy.ps1 first. Later runs without -PolicyFile keep the installed policy.
 
+.PARAMETER Checks
+    Standards checks to apply, as a list or 'all': security, performance, design, accessibility.
+    Writes a minimal organization policy with standards.checks set; security is always included.
+    Cannot be combined with -PolicyFile (set standards.checks in that file instead).
+
 .PARAMETER OutputFormat
     'Text' (default) or 'Json' (machine-readable plan/result).
 
@@ -89,6 +94,9 @@ param(
 
     [string]$PolicyFile,
 
+    # Validated in the main block; comma lists arrive as a single string under -File.
+    [string[]]$Checks,
+
     [ValidateSet('Text', 'Json')]
     [string]$OutputFormat = 'Text',
 
@@ -97,6 +105,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $script:HadFailure = $false
+$script:GeneratedPolicy = $null
 if ($ExpectVersion -and -not $Verify) { Write-Error '-ExpectVersion requires -Verify.' -ErrorAction Continue; exit 2 }
 if ($Verify -and $DryRun) { Write-Error '-Verify is read-only; do not combine it with -DryRun.' -ErrorAction Continue; exit 2 }
 if ($Verify) { $Force = $false }
@@ -563,6 +572,24 @@ try {
         if (-not (Test-Path -LiteralPath $path)) { throw "Required source is missing: $path" }
     }
 
+    # -Checks: generate a minimal organization policy that selects the standards checks.
+    $standardChecks = @('security', 'performance', 'design', 'accessibility')
+    if ($Checks) {
+        if ($PolicyFile) { throw '-Checks cannot be combined with -PolicyFile; set standards.checks in the policy file instead.' }
+        $requestedChecks = @($Checks | ForEach-Object { $_ -split '[,\s]+' } | Where-Object { $_ })
+        if ($requestedChecks.Count -eq 0) { throw '-Checks needs at least one check.' }
+        $selectedChecks = @('security')
+        foreach ($check in $requestedChecks) {
+            if ($check -eq 'all') { $selectedChecks = $standardChecks }
+            elseif ($standardChecks -ccontains $check) { $selectedChecks += $check }
+            else { throw "Unknown check: '$check'. Known checks: $($standardChecks -join ' '), all" }
+        }
+        $checksJson = (@($standardChecks | Where-Object { $selectedChecks -contains $_ }) | ForEach-Object { '"' + $_ + '"' }) -join ', '
+        $script:GeneratedPolicy = Join-Path ([System.IO.Path]::GetTempPath()) ("clean-code-refactor-policy-{0}.json" -f [guid]::NewGuid().ToString('N'))
+        [System.IO.File]::WriteAllText($script:GeneratedPolicy, "{`n  `"policyVersion`": 1,`n  `"standards`": { `"checks`": [$checksJson] }`n}`n", [System.Text.UTF8Encoding]::new($false))
+        $PolicyFile = $script:GeneratedPolicy
+    }
+
     # Organization policy: validated before anything is written.
     $policySource = $null
     $policyHash = $null
@@ -978,4 +1005,6 @@ try {
         [Console]::Error.WriteLine("Error: $message")
     }
     exit 2
+} finally {
+    if ($script:GeneratedPolicy) { Remove-Item -LiteralPath $script:GeneratedPolicy -Force -ErrorAction SilentlyContinue }
 }

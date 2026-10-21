@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Sign up</title>
+</head>
+<body>
+<div style="padding: 16px; font-family: sans-serif">
+<img src="/static/logo.png">
+<form action="/signup" method="post">
+<div style="margin-bottom: 8px"><span>Email</span> <input type="email" name="email" placeholder="Email"></div>
+<div style="margin-bottom: 8px"><span>Password</span> <input type="password" name="password"></div>
+<div style="margin-bottom: 8px"><input type="checkbox" name="newsletter"> Send me news</div>
+<div class="btn" style="margin-bottom: 8px" onclick="this.closest('form').submit()">Create account</div>
+</form>
+</div>
+</body>
+</html>

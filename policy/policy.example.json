@@ -6,9 +6,15 @@
   "gates": {
     "newCodeCoverageMin": 85,
     "newCodeDuplicationMax": 3,
+    "cognitiveComplexityMax": 15,
     "blockingSeverities": ["blocker", "critical", "major"]
   },
-  "standards": { "asvsLevel": 2, "wcagLevel": "AA" },
+  "standards": {
+    "asvsLevel": 2,
+    "wcagLevel": "AA",
+    "checks": ["security", "performance", "design", "accessibility"],
+    "webVitals": { "lcpMs": 2500, "inpMs": 200, "cls": 0.1 }
+  },
   "bannedApis": [
     { "id": "py-pickle-loads", "text": "pickle.loads", "languages": ["python"], "reason": "Unsafe deserialization of untrusted data (CWE-502)." },
     { "id": "js-eval", "text": "eval(", "languages": ["javascript", "typescript"], "reason": "Dynamic code execution (CWE-94)." }

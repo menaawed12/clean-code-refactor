@@ -307,6 +307,27 @@ check_not "T21 forced bundle drops stale files" [ -e "$B/clean-code-refactor/sta
 run_installer --bundle "$B" --verify
 assert_eq "T21 --bundle with --verify is a usage error" "$RUN_EXIT" "2"
 
+# ---------------------------------------------------------------- T22 standards checks
+T="$(new_target t22)"
+run_installer --editor claude,cursor --target "$T" --checks performance,design --json
+assert_eq "T22 install with --checks exits 0" "$RUN_EXIT" "0"
+check "T22 generated policy always includes security" grep -q '"checks": \["security", "performance", "design"\]' "$T/.claude/skills/clean-code-refactor/policy.json"
+check "T22 generated policy lands next to rule-file tools" cmp -s "$T/.claude/skills/clean-code-refactor/policy.json" "$T/.cursor/rules/clean-code-refactor-tools/policy.json"
+if compgen -G "${TMPDIR:-/tmp}/clean-code-refactor-policy.*" >/dev/null; then fail_test "T22 temporary policy is removed"; else pass "T22 temporary policy is removed"; fi
+run_installer --editor claude,cursor --target "$T" --checks design,performance --json
+check "T22 same checks in another order are up-to-date" output_has '"upToDate": 2,'
+run_installer --editor claude --target "$T" --checks all --json
+check "T22 'all' selects every check" grep -q '"checks": \["security", "performance", "design", "accessibility"\]' "$T/.claude/skills/clean-code-refactor/policy.json"
+run_installer --editor claude --target "$T" --checks speed
+assert_eq "T22 unknown check is a usage error" "$RUN_EXIT" "2"
+run_installer --editor claude --target "$T" --checks all --policy "$P"
+assert_eq "T22 --checks with --policy is a usage error" "$RUN_EXIT" "2"
+if command -v pwsh >/dev/null 2>&1; then
+  if pwsh -NoProfile -NonInteractive -File "$repository_root/scripts/check-policy.ps1" -PolicyFile "$T/.claude/skills/clean-code-refactor/policy.json" >/dev/null 2>&1; then pass "T22 generated policy is valid"; else fail_test "T22 generated policy is valid"; fi
+else
+  skip_test "T22 generated policy validation (PowerShell not available)"
+fi
+
 # ---------------------------------------------------------------- T15 bash profiler
 profiler="$repository_root/scripts/profile-repository.sh"
 run_profiler() {
