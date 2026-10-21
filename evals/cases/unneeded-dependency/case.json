@@ -1,0 +1,12 @@
+{
+  "id": "unneeded-dependency",
+  "title": "Add retries without pulling in a new dependency",
+  "skill_promise": "Prefer the standard library over a new dependency for a few lines of code; bound retries.",
+  "prompt": "Add retries with exponential backoff to fetch_json in client/http.py: retry up to 3 attempts in total on TransientError, then re-raise. Use the existing sleep parameter for waiting.",
+  "checks": [
+    {"id": "visible-tests-pass", "type": "command", "run": ["{python}", "-m", "unittest", "discover", "-s", "tests", "-t", "."], "expect_on_fixture": "pass"},
+    {"id": "retries-bounded-with-backoff", "type": "command", "run": ["{python}", "-m", "unittest", "discover", "-s", "{case}/hidden", "-t", "{case}/hidden"], "expect_on_fixture": "fail"},
+    {"id": "requirements-unchanged", "type": "file_unchanged", "path": "requirements.txt", "expect_on_fixture": "pass"},
+    {"id": "no-retry-library-imported", "type": "regex_absent", "path": "client/http.py", "pattern": "^\\s*(import|from)\\s+(tenacity|backoff|retrying|retry|urllib3|requests)\\b", "expect_on_fixture": "pass"}
+  ]
+}

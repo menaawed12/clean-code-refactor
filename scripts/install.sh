@@ -11,12 +11,12 @@
 
 set -euo pipefail
 
-PKG_VERSION='1.3.0'
+PKG_VERSION='1.4.0'
 SKILL_FILE='SKILL.md'
 REFERENCE_DIR='references'
 # PKG_VERSION, TOOL_SOURCES, known_ids, and the *_TARGETS tables are generated from
 # integrations/registry.json by scripts/sync-bash-installer.ps1; do not edit them by hand.
-TOOL_SOURCES=('scripts/profile-repository.ps1' 'scripts/profile-repository.sh')
+TOOL_SOURCES=('scripts/profile-repository.ps1' 'scripts/profile-repository.sh' 'scripts/check-policy.ps1')
 REFERENCES_DIR_NAME='clean-code-refactor-references'
 TOOLS_DIR_NAME='clean-code-refactor-tools'
 RECEIPT_FILE='.clean-code-refactor-install.json'
@@ -43,6 +43,15 @@ Options:
                         user-modified owned files.
       --list            List registry targets and exit.
       --json            Machine-readable JSON plan/result output.
+      --verify          Read-only check of installed targets: every owned file matches
+                        its receipt and the package, and the version is current.
+                        Exit 1 if any target is modified, outdated, or unmanaged.
+      --expect-version V
+                        With --verify, require installed version V instead of this
+                        package's version (for pinned fleets).
+      --policy FILE     Organization policy (JSON) to install next to the skill as
+                        policy.json. Validated with scripts/check-policy.ps1 when
+                        PowerShell is available. Later runs without --policy keep it.
   -h, --help            Show this help.
 
 Exit codes: 0 = success (skips allowed), 1 = target failure, 2 = usage/preflight error.
@@ -84,6 +93,9 @@ dry_run=0
 force=0
 list_only=0
 json_out=0
+policy_file=""
+verify_mode=0
+expect_version=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -96,6 +108,9 @@ while [[ $# -gt 0 ]]; do
     -f|--force) force=1; shift ;;
     --list) list_only=1; shift ;;
     --json) json_out=1; shift ;;
+    --verify) verify_mode=1; shift ;;
+    --expect-version) [ $# -ge 2 ] || { echo "Error: --expect-version needs a version." >&2; exit 2; }; expect_version="$2"; shift 2 ;;
+    --policy) [ $# -ge 2 ] || { echo "Error: --policy needs a file." >&2; exit 2; }; policy_file="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -105,6 +120,15 @@ fail_usage() {
   echo "Error: $1" >&2
   exit 2
 }
+
+if [ -n "$expect_version" ]; then
+  [ "$verify_mode" -eq 1 ] || fail_usage "--expect-version requires --verify."
+  [[ "$expect_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail_usage "--expect-version must be MAJOR.MINOR.PATCH."
+fi
+if [ "$verify_mode" -eq 1 ]; then
+  [ "$dry_run" -eq 0 ] || fail_usage "--verify is read-only; do not combine it with --dry-run."
+  force=0
+fi
 
 [[ "$scope" == "project" || "$scope" == "user" ]] || fail_usage "Unknown scope: $scope"
 
@@ -249,6 +273,30 @@ while IFS= read -r -d '' f; do
   SOURCE_RELS+=("$REFERENCE_DIR/${f#"$reference_source"/}")
 done < <(find "$reference_source" -type f -print0)
 for tool in "${TOOL_SOURCES[@]}"; do SOURCE_RELS+=("$tool"); done
+
+# Organization policy: validated before anything is written.
+policy_source=""
+policy_hash=""
+if [ -n "$policy_file" ]; then
+  [ -f "$policy_file" ] || fail_usage "Policy file not found: $policy_file"
+  [ -L "$policy_file" ] && fail_usage "Policy file must not be a symlink: $policy_file"
+  policy_size="$(wc -c < "$policy_file")"
+  [ "${policy_size//[!0-9]/}" -le 65536 ] || fail_usage "Policy file is larger than 65536 bytes: $policy_file"
+  policy_source="$(cd "$(dirname "$policy_file")" && pwd -P)/$(basename "$policy_file")"
+  if command -v pwsh >/dev/null 2>&1; then
+    if ! policy_check="$(pwsh -NoProfile -NonInteractive -File "$repository_root/scripts/check-policy.ps1" -PolicyFile "$policy_source" 2>&1)"; then
+      fail_usage "Policy file is invalid: $policy_check"
+    fi
+  else
+    echo "Warning: PowerShell is not available, so the policy file was not validated. Run scripts/check-policy.ps1 -PolicyFile on it before relying on it." >&2
+  fi
+  policy_hash="$(sha256_of "$policy_source")"
+fi
+
+# Where an organization policy lives inside an installed unit (check-policy.ps1 looks there).
+policy_key_for() {
+  if [ "$1" = "rule-file" ]; then printf '%s' "$TOOLS_DIR_NAME/policy.json"; else printf '%s' "policy.json"; fi
+}
 
 # --------------------------- rule body generation --------------------------
 
@@ -558,7 +606,10 @@ while IFS='|' read -r id kind root path fmt pointer_file pointer_link config_fil
             key="$rel"
             if [ "$kind" = "rule-file" ]; then
               case "$key" in
-                "$SKILL_FILE") key="$(basename "$destination")" ;;
+                "$SKILL_FILE")
+                  # The rule file is generated, so compare it with what this run would write.
+                  if ! printf '%s\n' "$(format_rule "$fmt")" | cmp -s - "$destination"; then unit_current=0; break; fi
+                  continue ;;
                 scripts/*) key="$TOOLS_DIR_NAME/${key##*/}" ;;
                 "$REFERENCE_DIR"/*) key="$REFERENCES_DIR_NAME/${key#"$REFERENCE_DIR"/}" ;;
               esac
@@ -569,6 +620,10 @@ while IFS='|' read -r id kind root path fmt pointer_file pointer_link config_fil
               break
             fi
           done
+          if [ $unit_current -eq 1 ] && [ -n "$policy_hash" ]; then
+            policy_installed="$unit_base/$(policy_key_for "$kind")"
+            if [ ! -f "$policy_installed" ] || [ "$(sha256_of "$policy_installed")" != "$policy_hash" ]; then unit_current=0; fi
+          fi
           if [ $unit_current -eq 1 ] && [ "$(receipt_version "$receipt")" = "$PKG_VERSION" ]; then
             status="up-to-date"
           else
@@ -607,6 +662,67 @@ for id in $selected; do
     plan_count=$((plan_count + 1))
   fi
 done
+
+# --------------------------- verify (read-only) ----------------------------
+# Reuses the plan: "up-to-date" already means every owned file matches its receipt and
+# the package. Nothing below writes.
+if [ "$verify_mode" -eq 1 ]; then
+  expected_version="${expect_version:-$PKG_VERSION}"
+  explicit=1
+  case "$requested" in ""|all|detected) explicit=0 ;; esac
+  verify_failed=0
+  VERIFY_LINES=()
+  for i in $(seq 0 $((plan_count - 1))); do
+    vstatus=""; vreason="${P_REASON[$i]}"; installed_version=""; vdest=""
+    if [ -n "${P_RECEIPT[$i]}" ] && [ -f "${P_RECEIPT[$i]}" ]; then installed_version="$(receipt_version "${P_RECEIPT[$i]}")"; fi
+    if [ -n "${P_ROOT[$i]}" ]; then vdest="$(join_under_root "${P_ROOT[$i]}" "${P_PATH[$i]}")"; fi
+    case "${P_STATUS[$i]}" in
+      failed) vstatus="failed" ;;
+      install) vstatus="not-installed"; vreason="" ;;
+      up-to-date) vstatus="verified"; vreason="" ;;
+      update) vstatus="outdated"; vreason="installed files or version ${installed_version:-unknown} differ from package $PKG_VERSION" ;;
+      skipped)
+        case "$vreason" in
+          *"no package receipt"*) vstatus="unmanaged"; vreason="installed files have no package receipt" ;;
+          *"user modifications"*) vstatus="modified"; vreason="an owned file is missing or differs from its receipt" ;;
+          *) vstatus="not-applicable" ;;
+        esac ;;
+    esac
+    # Pinned to another version: the package cannot vouch for those files, so check the
+    # receipt integrity (above) and the version only.
+    if [ "$expected_version" != "$PKG_VERSION" ] && { [ "$vstatus" = "verified" ] || [ "$vstatus" = "outdated" ]; }; then
+      if [ "$installed_version" = "$expected_version" ]; then vstatus="verified"; vreason="integrity and version checked; content not compared with package $PKG_VERSION"
+      else vstatus="outdated"; vreason="installed version ${installed_version:-unknown}, expected $expected_version"; fi
+    fi
+    case "$vstatus" in
+      verified|not-applicable) ;;
+      not-installed) if [ $explicit -eq 1 ]; then verify_failed=1; fi ;;
+      *) verify_failed=1 ;;
+    esac
+    if [ "$json_out" -eq 1 ]; then
+      VERIFY_LINES+=("{ \"editor\": \"$(json_escape "${P_ID[$i]}")\", \"scope\": \"$scope\", \"status\": \"$vstatus\", \"destination\": \"$(json_escape "$vdest")\", \"installedVersion\": \"$(json_escape "$installed_version")\", \"reason\": \"$(json_escape "$vreason")\" }")
+    else
+      line="[$vstatus] ${P_ID[$i]} ($scope)"
+      if [ -n "$vdest" ]; then line="$line -> $vdest"; fi
+      if [ -n "$vreason" ]; then line="$line - $vreason"; fi
+      echo "$line"
+    fi
+  done
+  if [ "$json_out" -eq 1 ]; then
+    passed_json="true"; [ $verify_failed -eq 1 ] && passed_json="false"
+    printf '{ "mode": "verify", "package": "%s", "expectedVersion": "%s", "scope": "%s", "passed": %s, "results": [\n' "$PKG_VERSION" "$(json_escape "$expected_version")" "$scope" "$passed_json"
+    first=1
+    for entry in ${VERIFY_LINES[@]+"${VERIFY_LINES[@]}"}; do
+      [ $first -eq 1 ] || printf ',\n'
+      first=0
+      printf '%s' "$entry"
+    done
+    printf '\n] }\n'
+  else
+    if [ $verify_failed -eq 1 ]; then echo "Verification failed."; else echo "Verification passed."; fi
+  fi
+  exit $verify_failed
+fi
 
 blocked=0
 for i in $(seq 0 $((plan_count - 1))); do
@@ -647,6 +763,11 @@ emit_result() {
   esac
 }
 
+# Human-readable progress; goes to stderr in --json mode so stdout stays parseable.
+progress() {
+  if [ "$json_out" -eq 1 ]; then echo "$1" >&2; else echo "$1"; fi
+}
+
 install_pointer() {
   local pointer_path="$1" skill_link="$2" body create_body
   create_body="$POINTER_MARKER"$'\n## Clean Code Refactor\n\nFor refactoring, lint remediation, duplicate detection, code hardening, and code-quality reviews, load and follow `'"$skill_link"$'`.\n<!-- /clean-code-refactor-skill -->\n'
@@ -654,10 +775,10 @@ install_pointer() {
   if [ ! -e "$pointer_path" ]; then
     mkdir -p "$(dirname "$pointer_path")"
     printf '%s' "$create_body" > "$pointer_path"
-    echo "Created pointer: $pointer_path"
+    progress "Created pointer: $pointer_path"
   elif ! grep -Fq "$POINTER_MARKER" "$pointer_path"; then
     printf '%s' "$body" >> "$pointer_path"
-    echo "Appended pointer section: $pointer_path"
+    progress "Appended pointer section: $pointer_path"
   fi
 }
 
@@ -666,7 +787,7 @@ ensure_config_entry() {
   if [ ! -e "$config_path" ]; then
     mkdir -p "$(dirname "$config_path")"
     printf '{\n  "instructions": [\n    "%s"\n  ]\n}\n' "$config_entry" > "$config_path"
-    echo "Created configuration: $config_path"
+    progress "Created configuration: $config_path"
   elif ! grep -Fq "$config_entry" "$config_path"; then
     echo "Add \"$config_entry\" to the instructions array in $config_path to enable this rule." >&2
   fi
@@ -716,7 +837,10 @@ for i in $(seq 0 $((plan_count - 1))); do
 
   if [ "$kind" = "skill-folder" ]; then
     if [ "$dry_run" -eq 0 ]; then
-      if write_file_if_changed "$unit_base/$SKILL_FILE" "$skill_text"; then written=$((written + 1)); fi
+      # Copy byte-for-byte: capturing the text with $(...) would drop the final newline.
+      if ! cmp -s "$skill_source" "$unit_base/$SKILL_FILE"; then
+        if copy_file_verified "$skill_source" "$unit_base/$SKILL_FILE"; then written=$((written + 1)); else target_failed=1; fi
+      fi
     fi
     sync_mirror "$reference_source" "$unit_base/$REFERENCE_DIR"
     if [ $SYNC_FAILED -eq 1 ]; then target_failed=1; fi
@@ -733,7 +857,8 @@ for i in $(seq 0 $((plan_count - 1))); do
     fi
   else
     if [ "$dry_run" -eq 0 ]; then
-      if write_file_if_changed "$destination" "$(format_rule "$fmt")"; then written=$((written + 1)); fi
+      # $(...) drops the final newline; add it back so both installers write identical files.
+      if write_file_if_changed "$destination" "$(format_rule "$fmt")"$'\n'; then written=$((written + 1)); fi
     fi
     sync_mirror "$reference_source" "$unit_base/$REFERENCES_DIR_NAME"
     if [ $SYNC_FAILED -eq 1 ]; then target_failed=1; fi
@@ -750,6 +875,14 @@ for i in $(seq 0 $((plan_count - 1))); do
     fi
   fi
 
+  policy_key="$(policy_key_for "$kind")"
+  if [ -n "$policy_source" ]; then
+    if [ "$dry_run" -eq 0 ]; then
+      if ! copy_file_verified "$policy_source" "$unit_base/$policy_key"; then target_failed=1; fi
+    fi
+    written=$((written + 1))
+  fi
+
   # --------------------------- receipt ---------------------------
   if [ $target_failed -eq 0 ] && [ "$dry_run" -eq 0 ]; then
     RECEIPT_RELS=()
@@ -764,6 +897,12 @@ for i in $(seq 0 $((plan_count - 1))); do
           *) RECEIPT_RELS+=("$REFERENCES_DIR_NAME/${rel#"$REFERENCE_DIR"/}") ;;
         esac
       done
+    fi
+    # An installed organization policy stays owned until it is replaced.
+    if [ -f "$unit_base/$policy_key" ]; then
+      if [ -n "$policy_source" ] || { [ -f "$receipt" ] && [ -n "$(receipt_hash_for_key "$policy_key" "$receipt")" ]; }; then
+        RECEIPT_RELS+=("$policy_key")
+      fi
     fi
     mkdir -p "$(dirname "$receipt")"
     write_receipt "$receipt" "$id" "$kind"

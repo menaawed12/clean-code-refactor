@@ -35,6 +35,18 @@
 .PARAMETER List
     List registry targets and exit.
 
+.PARAMETER Verify
+    Read-only check of installed targets: every owned file matches its receipt and the
+    package, and the version is current. Exits 1 if any target is modified, outdated, or
+    unmanaged, or if an explicitly named target is not installed.
+
+.PARAMETER ExpectVersion
+    With -Verify, require this installed version instead of the package version.
+
+.PARAMETER PolicyFile
+    Organization policy (JSON) to install next to the skill as policy.json. It is validated with
+    scripts/check-policy.ps1 first. Later runs without -PolicyFile keep the installed policy.
+
 .PARAMETER OutputFormat
     'Text' (default) or 'Json' (machine-readable plan/result).
 
@@ -65,12 +77,22 @@ param(
 
     [switch]$List,
 
+    [switch]$Verify,
+
+    [ValidatePattern('^\d+\.\d+\.\d+$')]
+    [string]$ExpectVersion,
+
+    [string]$PolicyFile,
+
     [ValidateSet('Text', 'Json')]
     [string]$OutputFormat = 'Text'
 )
 
 $ErrorActionPreference = 'Stop'
 $script:HadFailure = $false
+if ($ExpectVersion -and -not $Verify) { Write-Error '-ExpectVersion requires -Verify.' -ErrorAction Continue; exit 2 }
+if ($Verify -and $DryRun) { Write-Error '-Verify is read-only; do not combine it with -DryRun.' -ErrorAction Continue; exit 2 }
+if ($Verify) { $Force = $false }
 $isWindowsOs = ($env:OS -eq 'Windows_NT')
 
 function Get-Prop {
@@ -342,7 +364,7 @@ function Get-FormattedRuleContent {
                 "alwaysApply: false`n" +
                 "---`n`n" +
                 "$marker`n`n" +
-                $Body +
+                $Body.TrimEnd("`n") +
                 "`n`n@$ReferencesDirName/language-hardening.md`n" +
                 "@$ReferencesDirName/static-quality-rules.md`n"
         }
@@ -382,14 +404,46 @@ function Test-UnitUserModified {
     return $false
 }
 
+function Get-PolicyKey {
+    # Where an organization policy lives inside an installed unit (check-policy.ps1 looks there).
+    param([string]$Kind, [string]$ToolsDirName)
+    if ($Kind -eq 'rule-file') { return "$ToolsDirName/policy.json" }
+    return 'policy.json'
+}
+
+function Test-PolicyCurrent {
+    # True when no policy was requested, or the installed policy already matches it.
+    param([string]$UnitBase, [string]$PolicyKey, [string]$PolicyHash)
+    if (-not $PolicyHash) { return $true }
+    $installed = Join-UnderRoot -Root $UnitBase -RelativePath $PolicyKey
+    return (Test-Path -LiteralPath $installed -PathType Leaf) -and ((Get-FileSha256 -PathValue $installed) -eq $PolicyHash)
+}
+
 function Test-UnitUpToDate {
-    # True when the receipt version matches and every source file matches its recorded hash.
-    param($Receipt, [string]$Version, $SourceMap)
+    <#
+        True when the receipt version matches and every installed file matches the package.
+        Rule-file units hold a generated rule instead of SKILL.md, and references and tools in
+        renamed folders, so their paths are mapped and the rule is compared with what this run
+        would write.
+    #>
+    param($Receipt, [string]$Version, $SourceMap, [string]$Kind, [string]$RuleFilePath, [string]$ExpectedRuleContent, $Package, $Layout)
     if ($null -eq $Receipt) { return $false }
     if ((Get-Prop $Receipt 'version') -ne $Version) { return $false }
     if ($null -eq (Get-Prop $Receipt 'files')) { return $false }
+    $skillFile = Get-Prop $Package 'canonicalSkillFile'
+    $referenceDir = Get-Prop $Package 'referenceDir'
     foreach ($entry in $SourceMap.GetEnumerator()) {
-        $fullPath = Join-UnderRoot -Root $script:UnitBase -RelativePath $entry.Key
+        $relative = $entry.Key
+        if ($Kind -eq 'rule-file') {
+            if ($relative -eq $skillFile) {
+                if (-not (Test-Path -LiteralPath $RuleFilePath -PathType Leaf)) { return $false }
+                if ((Get-Content -LiteralPath $RuleFilePath -Raw) -ne $ExpectedRuleContent) { return $false }
+                continue
+            }
+            if ($relative.StartsWith("$referenceDir/")) { $relative = "$(Get-Prop $Layout 'referencesDirName')/$($relative.Substring($referenceDir.Length + 1))" }
+            elseif ($relative.StartsWith('scripts/')) { $relative = "$(Get-Prop $Layout 'toolsDirName')/$($relative.Substring(8))" }
+        }
+        $fullPath = Join-UnderRoot -Root $script:UnitBase -RelativePath $relative
         if (-not (Test-Path -LiteralPath $fullPath -PathType Leaf)) { return $false }
         if ((Get-FileSha256 -PathValue $fullPath) -ne $entry.Value) { return $false }
     }
@@ -415,6 +469,20 @@ try {
     $toolSourcePaths = @($toolSources | ForEach-Object { Join-UnderRoot -Root $repositoryRoot -RelativePath $_ })
     foreach ($path in @($skillSource, $referenceSource) + $toolSourcePaths) {
         if (-not (Test-Path -LiteralPath $path)) { throw "Required source is missing: $path" }
+    }
+
+    # Organization policy: validated before anything is written.
+    $policySource = $null
+    $policyHash = $null
+    if ($PolicyFile) {
+        if (-not (Test-Path -LiteralPath $PolicyFile -PathType Leaf)) { throw "Policy file not found: $PolicyFile" }
+        $policyItem = Get-Item -LiteralPath $PolicyFile -Force
+        if (($policyItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { throw "Policy file must not be a symlink: $PolicyFile" }
+        if ($policyItem.Length -gt 65536) { throw "Policy file is larger than 65536 bytes: $PolicyFile" }
+        $policySource = $policyItem.FullName
+        $policyCheck = & (Join-Path $repositoryRoot 'scripts/check-policy.ps1') -PolicyFile $policySource
+        if ($LASTEXITCODE -ne 0) { throw "Policy file is invalid: $(($policyCheck | Out-String).Trim())" }
+        $policyHash = Get-FileSha256 -PathValue $policySource
     }
 
     $editorIds = @((Get-Prop $registry 'editors').PSObject.Properties.Name | Sort-Object)
@@ -498,6 +566,16 @@ try {
     $toolsDirName = Get-Prop $layout 'toolsDirName'
     $receiptFileName = Get-Prop $package 'receiptFileName'
 
+    function Get-ExpectedRuleContent {
+        # The rule file this run would write for a rule-file scope; $null for skill folders.
+        param([string]$Kind, $ScopeDef)
+        if ($Kind -ne 'rule-file') { return $null }
+        $ruleFormat = Get-Prop $ScopeDef 'format'
+        if (-not $ruleFormat) { $ruleFormat = 'plain' }
+        $ruleBody = Get-RuleBody -Registry $registry -SkillText $skillText -ReferenceDir $referenceSource -RepositoryRoot $repositoryRoot
+        return Get-FormattedRuleContent -Body $ruleBody -Format $ruleFormat -Version $version -ReferencesDirName $referencesDirName
+    }
+
     # ------------------------------- Plan ---------------------------------
     $plan = @()
     foreach ($id in $selected) {
@@ -556,7 +634,8 @@ try {
         } elseif (Test-UnitUserModified -Receipt $receipt) {
             if ($Force) { $status = 'update'; $reason = 'user modifications detected; replacing because -Force was given' }
             else { $status = 'skipped'; $reason = 'user modifications detected; use -Force to overwrite' }
-        } elseif (Test-UnitUpToDate -Receipt $receipt -Version $version -SourceMap $sourceMap) {
+        } elseif ((Test-UnitUpToDate -Receipt $receipt -Version $version -SourceMap $sourceMap -Kind $kind -RuleFilePath $destination -ExpectedRuleContent (Get-ExpectedRuleContent -Kind $kind -ScopeDef $scopeDef) -Package $package -Layout $layout) -and
+            (Test-PolicyCurrent -UnitBase $unitBase -PolicyKey (Get-PolicyKey -Kind $kind -ToolsDirName $toolsDirName) -PolicyHash $policyHash)) {
             $status = 'up-to-date'
         } else {
             $status = 'update'
@@ -569,6 +648,56 @@ try {
             ReceiptPath = $receiptPath; Status = $status; Reason = $reason; Verification = $verification
             ScopeDef = $scopeDef
         }
+    }
+
+    # ----------------------------- Verify (read-only) ----------------------
+    # Reuses the plan: 'up-to-date' already means every owned file matches its receipt and
+    # the package. Nothing below writes.
+    if ($Verify) {
+        $expectedVersion = if ($ExpectVersion) { $ExpectVersion } else { $version }
+        $explicit = -not (($Editor.Count -eq 1) -and ($Editor[0] -in @('all', 'detected')))
+        $verifyFailed = $false
+        $verifyResults = @()
+        foreach ($item in $plan) {
+            $receiptData = if ($item.ReceiptPath) { Get-Receipt -ReceiptPath $item.ReceiptPath } else { $null }
+            $installedVersion = [string](Get-Prop $receiptData 'version')
+            $reasonText = $item.Reason
+            $verifyStatus = switch ($item.Status) {
+                'failed' { 'failed' }
+                'install' { 'not-installed'; $reasonText = $null }
+                'up-to-date' { 'verified'; $reasonText = $null }
+                'update' { 'outdated'; $reasonText = "installed files or version $(if ($installedVersion) { $installedVersion } else { 'unknown' }) differ from package $version" }
+                default {
+                    if ("$($item.Reason)" -like '*no package receipt*') { 'unmanaged'; $reasonText = 'installed files have no package receipt' }
+                    elseif ("$($item.Reason)" -like '*user modifications*') { 'modified'; $reasonText = 'an owned file is missing or differs from its receipt' }
+                    else { 'not-applicable' }
+                }
+            }
+            # Pinned to another version: check receipt integrity (above) and the version only.
+            if ($expectedVersion -ne $version -and $verifyStatus -in @('verified', 'outdated')) {
+                if ($installedVersion -eq $expectedVersion) { $verifyStatus = 'verified'; $reasonText = "integrity and version checked; content not compared with package $version" }
+                else { $verifyStatus = 'outdated'; $reasonText = "installed version $(if ($installedVersion) { $installedVersion } else { 'unknown' }), expected $expectedVersion" }
+            }
+            if ($verifyStatus -eq 'not-installed') { if ($explicit) { $verifyFailed = $true } }
+            elseif ($verifyStatus -notin @('verified', 'not-applicable')) { $verifyFailed = $true }
+            $verifyResults += [pscustomobject]@{
+                editor = $item.Editor; scope = $item.Scope; status = $verifyStatus
+                destination = $item.Destination; installedVersion = $installedVersion; reason = $reasonText
+            }
+        }
+        if ($OutputFormat -eq 'Json') {
+            [ordered]@{ mode = 'verify'; package = $version; expectedVersion = $expectedVersion; scope = $Scope; passed = (-not $verifyFailed); results = @($verifyResults) } | ConvertTo-Json -Depth 4
+        } else {
+            foreach ($result in $verifyResults) {
+                $line = "[$($result.status)] $($result.editor) ($($result.scope))"
+                if ($result.destination) { $line += " -> $($result.destination)" }
+                if ($result.reason) { $line += " - $($result.reason)" }
+                Write-Output $line
+            }
+            Write-Output $(if ($verifyFailed) { 'Verification failed.' } else { 'Verification passed.' })
+        }
+        if ($verifyFailed) { exit 1 }
+        exit 0
     }
 
     $blocked = @($plan | Where-Object { $_.Status -eq 'failed' })
@@ -653,11 +782,18 @@ try {
                 }
             }
 
+            $policyKey = Get-PolicyKey -Kind $kind -ToolsDirName $toolsDirName
+            if ($policySource) {
+                if (-not $DryRun) { Copy-FileVerified -Source $policySource -Destination (Join-UnderRoot -Root $unitBase -RelativePath $policyKey) }
+                $filesWritten++
+            }
+
             # Additive, marked extras (pointer sections, config entries).
             Install-AdditiveExtra -Kind $kind -Root $rootPath -ScopeDef $scopeDef
 
             # ----------------------------- Receipt ----------------------------
             if (-not $DryRun) {
+                $previousReceipt = Get-Receipt -ReceiptPath $item.ReceiptPath
                 $ownedFiles = [ordered]@{}
                 if ($kind -eq 'skill-folder') {
                     $ownedFiles[(Get-Prop $package 'canonicalSkillFile')] = $sourceMap[(Get-Prop $package 'canonicalSkillFile')]
@@ -671,6 +807,12 @@ try {
                     foreach ($entry in (Get-DirectoryFileMap -Directory (Join-UnderRoot -Root $unitBase -RelativePath $referencesDirName)).GetEnumerator()) {
                         $ownedFiles["$referencesDirName/$($entry.Key)"] = $entry.Value
                     }
+                }
+                # An installed organization policy stays owned until it is replaced.
+                $installedPolicy = Join-UnderRoot -Root $unitBase -RelativePath $policyKey
+                $previouslyOwned = $null -ne (Get-Prop (Get-Prop $previousReceipt 'files') $policyKey)
+                if (($policySource -or $previouslyOwned) -and (Test-Path -LiteralPath $installedPolicy -PathType Leaf)) {
+                    $ownedFiles[$policyKey] = Get-FileSha256 -PathValue $installedPolicy
                 }
                 $receiptObject = New-ReceiptObject -Version $version -EditorId $item.Editor -ScopeName $Scope -Kind $kind -Files $ownedFiles
                 $receiptTarget = $item.ReceiptPath

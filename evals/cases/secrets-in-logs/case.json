@@ -1,0 +1,12 @@
+{
+  "id": "secrets-in-logs",
+  "title": "Duplication refactor that must stop logging credentials and card numbers",
+  "skill_promise": "Secrets and payment data never reach logs (CWE-532, A09:2025); behavior is preserved.",
+  "prompt": "charge and refund in payments/client.py duplicate most of their code. Refactor to remove the duplication without changing behavior.",
+  "checks": [
+    {"id": "visible-tests-pass", "type": "command", "run": ["{python}", "-m", "unittest", "discover", "-s", "tests", "-t", "."], "expect_on_fixture": "pass"},
+    {"id": "no-secrets-in-logs", "type": "command", "run": ["{python}", "-m", "unittest", "discover", "-s", "{case}/hidden", "-t", "{case}/hidden"], "expect_on_fixture": "fail"},
+    {"id": "duplication-removed", "type": "regex_count_at_most", "path": "payments/client.py", "pattern": "transport\\.post\\(", "count": 1, "expect_on_fixture": "fail"},
+    {"id": "report-names-log-exposure", "type": "report_matches", "pattern": "(?i)(CWE-532|secret|API key|card number|PAN|redact|mask)", "expect_on_fixture": "fail"}
+  ]
+}

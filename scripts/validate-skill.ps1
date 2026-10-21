@@ -49,6 +49,9 @@ $installerPath = Join-Path $RepositoryRoot 'scripts/install.ps1'
 $bashInstallerPath = Join-Path $RepositoryRoot 'scripts/install.sh'
 $profileScriptPath = Join-Path $RepositoryRoot 'scripts/profile-repository.ps1'
 $bashProfileScriptPath = Join-Path $RepositoryRoot 'scripts/profile-repository.sh'
+$checkPolicyPath = Join-Path $RepositoryRoot 'scripts/check-policy.ps1'
+$policySchemaPath = Join-Path $RepositoryRoot 'policy/policy.schema.json'
+$policyExamplePath = Join-Path $RepositoryRoot 'policy/policy.example.json'
 $psTestRunnerPath = Join-Path $RepositoryRoot 'tests/run-tests.ps1'
 $bashTestRunnerPath = Join-Path $RepositoryRoot 'tests/install.sh.tests.sh'
 $requiredHeadings = @(
@@ -60,7 +63,7 @@ $requiredHeadings = @(
     '## Completion Report'
 )
 
-foreach ($path in @($skillPath, $readmePath, $referencePath, $staticQualityRulesPath, $policyGuidancePath, $apiSafetyPath, $testSupplyChainPath, $reviewReportPath, $aiCodePath, $standardsMappingPath, $agentSecurityPath, $securityPolicyPath, $changelogPath, $registryPath, $compatibilityDocPath, $installerPath, $bashInstallerPath, $profileScriptPath, $bashProfileScriptPath, $psTestRunnerPath, $bashTestRunnerPath)) {
+foreach ($path in @($skillPath, $readmePath, $referencePath, $staticQualityRulesPath, $policyGuidancePath, $apiSafetyPath, $testSupplyChainPath, $reviewReportPath, $aiCodePath, $standardsMappingPath, $agentSecurityPath, $securityPolicyPath, $changelogPath, $registryPath, $compatibilityDocPath, $installerPath, $bashInstallerPath, $profileScriptPath, $bashProfileScriptPath, $checkPolicyPath, $policySchemaPath, $policyExamplePath, $psTestRunnerPath, $bashTestRunnerPath)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         throw "Required file is missing: $path"
     }
@@ -289,6 +292,12 @@ foreach ($token in @('--max-files', '--max-depth', '--max-file-bytes', '--timeou
         throw "Bash profiler is missing required bounded-scan feature: $token"
     }
 }
+
+# --------------------------- policy files ----------------------------------
+
+try { $null = Get-Content -LiteralPath $policySchemaPath -Raw | ConvertFrom-Json } catch { throw "policy/policy.schema.json is not valid JSON: $($_.Exception.Message)" }
+$policyCheck = & $checkPolicyPath -PolicyFile $policyExamplePath
+if ($LASTEXITCODE -ne 0) { throw "policy/policy.example.json fails check-policy.ps1: $(($policyCheck | Out-String).Trim())" }
 
 # --------------------------- README and hygiene ----------------------------
 

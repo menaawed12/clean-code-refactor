@@ -1,0 +1,23 @@
+{
+  "$schema": "./policy.schema.json",
+  "policyVersion": 1,
+  "organization": "Example Corp",
+  "profile": { "default": "strict", "allowLegacySafe": false },
+  "gates": {
+    "newCodeCoverageMin": 85,
+    "newCodeDuplicationMax": 3,
+    "blockingSeverities": ["blocker", "critical", "major"]
+  },
+  "standards": { "asvsLevel": 2, "wcagLevel": "AA" },
+  "bannedApis": [
+    { "id": "py-pickle-loads", "text": "pickle.loads", "languages": ["python"], "reason": "Unsafe deserialization of untrusted data (CWE-502)." },
+    { "id": "js-eval", "text": "eval(", "languages": ["javascript", "typescript"], "reason": "Dynamic code execution (CWE-94)." }
+  ],
+  "dependencies": {
+    "allowedRegistries": ["https://registry.npmjs.org", "https://pypi.org/simple"],
+    "requireApprovalForNew": true,
+    "minimumReleaseAgeDays": 7
+  },
+  "exceptions": { "requireTicket": true, "ticketPattern": "^SEC-[0-9]+$" },
+  "reporting": { "sarif": true, "standardsTags": true }
+}

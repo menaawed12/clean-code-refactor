@@ -1,0 +1,65 @@
+# Live behavioral evals: runs a coding agent on every case in evals/cases, with and
+# without the skill, and fails when quality drops below evals/baseline.json. Every run
+# also writes eval-results/baseline.json; commit it as evals/baseline.json to set or
+# raise the bar (the gate is skipped until a baseline exists).
+#
+# The agent's API key lives in the protected "evals" environment (see
+# docs/repository-settings.md), so pull requests cannot reach it. The agent may only use
+# file tools, the Skill tool, and the test command, with a budget cap per run.
+name: Evals
+
+on:
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: Runs per case and arm (pass^k uses all of them)
+        default: '3'
+      cases:
+        description: Space-separated case ids (empty for all)
+        default: ''
+  schedule:
+    - cron: '17 5 * * 3'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: evals
+  cancel-in-progress: false
+
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    environment: evals
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          package-manager-cache: false  # this job holds a secret; never restore a shared cache
+      - name: Install the pinned agent CLI (lockfile hashes, no install scripts)
+        run: npm ci --ignore-scripts --no-audit --no-fund --prefix evals/agent
+      - name: Run evals against the baseline
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          RUNS: ${{ inputs.runs || '3' }}
+          CASES: ${{ inputs.cases || '' }}
+        run: |
+          [[ "$RUNS" =~ ^[1-9][0-9]?$ ]] || { echo "::error::runs must be a number from 1 to 99"; exit 1; }
+          [[ "$CASES" =~ ^[a-z0-9\ -]*$ ]] || { echo "::error::cases must be case ids separated by spaces"; exit 1; }
+          read -r -a case_args <<< "$CASES"
+          agent="node $GITHUB_WORKSPACE/evals/agent/node_modules/@anthropic-ai/claude-code/cli-wrapper.cjs"
+          python3 evals/run_evals.py --editor claude --runs "$RUNS" \
+            ${case_args[@]+--cases "${case_args[@]}"} \
+            --agent-cmd "$agent -p {prompt} --permission-mode acceptEdits --allowedTools 'Read,Edit,Write,Glob,Grep,Skill,Bash(python3 -m unittest *),Bash(python -m unittest *)' --max-budget-usd 2" \
+            --baseline evals/baseline.json --write-baseline eval-results/baseline.json --out eval-results
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: eval-results
+          path: eval-results
+          retention-days: 30

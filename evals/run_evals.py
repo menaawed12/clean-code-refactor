@@ -65,6 +65,68 @@ def run_agent(template: str, prompt: str, workspace: Path, timeout: int) -> tupl
     return output, code, time.monotonic() - started
 
 
+METRICS = ("fixed", "preserved", "passAtK")
+
+
+def rate(rows: list[dict], kind: str) -> float | None:
+    """Share of checks that pass, over checks of one kind.
+
+    fixed     - checks that fail on the untouched fixture: the work that was asked for.
+    preserved - checks that pass on the fixture: behavior, scope, and safety kept intact.
+    Reported separately because a do-nothing agent passes every preservation check.
+    """
+    expected = "fail" if kind == "fixed" else "pass"
+    outcomes = [result["passed"] for row in rows for result in row["results"] if result["expect_on_fixture"] == expected]
+    return sum(outcomes) / len(outcomes) if outcomes else None
+
+
+def pass_at_k(rows: list[dict]) -> float | None:
+    """Share of cases where every run passed every check (pass^k: reliable, not lucky)."""
+    by_case: dict[str, bool] = {}
+    for row in rows:
+        by_case[row["case"]] = by_case.get(row["case"], True) and row["passed"] == row["total"]
+    return sum(by_case.values()) / len(by_case) if by_case else None
+
+
+def summarize(rows: list[dict], case_ids: list[str], arms: list[str]) -> tuple[dict, list[str]]:
+    def cell(value):
+        return f"{value:.0%}" if value is not None else "-"
+
+    summary = {"runs": rows, "byArm": {}}
+    header = " | ".join(f"{arm}: fixed | {arm}: preserved | {arm}: pass^k" for arm in arms)
+    lines = [f"| Case | {header} |", "| --- |" + " --- | --- | --- |" * len(arms)]
+    for case_id in case_ids:
+        cells = []
+        for arm in arms:
+            selected = [row for row in rows if row["case"] == case_id and row["arm"] == arm]
+            cells += [cell(rate(selected, "fixed")), cell(rate(selected, "preserved")), cell(pass_at_k(selected))]
+        lines.append(f"| {case_id} | " + " | ".join(cells) + " |")
+    totals = []
+    for arm in arms:
+        selected = [row for row in rows if row["arm"] == arm]
+        metrics = {"fixed": rate(selected, "fixed"), "preserved": rate(selected, "preserved"), "passAtK": pass_at_k(selected)}
+        summary["byArm"][arm] = metrics
+        totals += [f"**{cell(metrics[name])}**" for name in METRICS]
+    lines.append("| **all cases** | " + " | ".join(totals) + " |")
+    return summary, lines
+
+
+def compare_to_baseline(current: dict, baseline: dict, max_drop: float) -> list[str]:
+    """Describe every metric that fell more than max_drop below the baseline."""
+    regressions = []
+    for arm, metrics in baseline.items():
+        for name in METRICS:
+            before = metrics.get(name)
+            after = current.get(arm, {}).get(name)
+            if before is None:
+                continue
+            if after is None:
+                regressions.append(f"{arm}/{name}: missing from this run (baseline {before:.0%})")
+            elif before - after > max_drop:
+                regressions.append(f"{arm}/{name}: {after:.0%}, down from {before:.0%} (allowed drop {max_drop:.0%})")
+    return regressions
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--agent-cmd", required=True, help="agent command template (see placeholders above)")
@@ -76,6 +138,9 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--skill-hint", default=DEFAULT_SKILL_HINT,
                         help="text prepended to the prompt in the 'with' arm; pass '' to test automatic triggering")
     parser.add_argument("--out", type=Path, default=Path("eval-results"), help="results directory (default: eval-results)")
+    parser.add_argument("--baseline", type=Path, help="fail (exit 1) when a metric drops more than --max-drop below this baseline")
+    parser.add_argument("--max-drop", type=float, default=0.05, help="allowed drop per metric, as a fraction (default: 0.05)")
+    parser.add_argument("--write-baseline", type=Path, help="write this run's metrics as a new baseline")
     args = parser.parse_args(argv)
 
     case_ids = args.cases or sorted(path.name for path in grade.CASES_DIR.iterdir() if path.is_dir())
@@ -115,37 +180,31 @@ def main(argv: list[str]) -> int:
                              "agentExit": exit_code, "seconds": round(seconds, 1), "results": results})
                 print(f"{case_id} [{arm} #{run}]: {passed}/{len(results)} checks, agent exit {exit_code}, {seconds:.0f}s")
 
-    # Two metrics, because a do-nothing agent passes every preservation check:
-    #   fixed     - checks that fail on the untouched fixture (the work that was asked for)
-    #   preserved - checks that pass on the fixture (behavior, scope, and safety kept intact)
-    def rate(selected_rows, kind):
-        expected = "fail" if kind == "fixed" else "pass"
-        outcomes = [result["passed"] for row in selected_rows for result in row["results"] if result["expect_on_fixture"] == expected]
-        return sum(outcomes) / len(outcomes) if outcomes else None
-
-    def cell(value):
-        return f"{value:.0%}" if value is not None else "-"
-
-    summary = {"agentCommand": args.agent_cmd, "editor": args.editor, "runs": rows, "byArm": {}}
-    header = " | ".join(f"{arm}: fixed | {arm}: preserved" for arm in arms)
-    lines = [f"| Case | {header} |", "| --- |" + " --- | --- |" * len(arms)]
-    for case_id in case_ids:
-        cells = []
-        for arm in arms:
-            selected = [row for row in rows if row["case"] == case_id and row["arm"] == arm]
-            cells += [cell(rate(selected, "fixed")), cell(rate(selected, "preserved"))]
-        lines.append(f"| {case_id} | " + " | ".join(cells) + " |")
-    totals = []
-    for arm in arms:
-        selected = [row for row in rows if row["arm"] == arm]
-        summary["byArm"][arm] = {"fixed": rate(selected, "fixed"), "preserved": rate(selected, "preserved")}
-        totals += [f"**{cell(summary['byArm'][arm]['fixed'])}**", f"**{cell(summary['byArm'][arm]['preserved'])}**"]
-    lines.append("| **all cases** | " + " | ".join(totals) + " |")
+    summary, lines = summarize(rows, case_ids, arms)
+    summary.update({"agentCommand": args.agent_cmd, "editor": args.editor, "runsPerCase": args.runs})
 
     (args.out / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     (args.out / "summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     print("\n" + "\n".join(lines))
     print(f"\nResults: {args.out.resolve()}")
+
+    if args.write_baseline:
+        baseline = {"byArm": summary["byArm"], "cases": case_ids, "runsPerCase": args.runs, "agentCommand": args.agent_cmd}
+        args.write_baseline.write_text(json.dumps(baseline, indent=2) + "\n", encoding="utf-8")
+        print(f"Baseline written: {args.write_baseline}")
+    if args.baseline:
+        if not args.baseline.is_file():
+            print(f"No baseline at {args.baseline}; regression gate skipped. Record one with --write-baseline.")
+            return 0
+        baseline = json.loads(args.baseline.read_text(encoding="utf-8"))
+        if sorted(baseline.get("cases", [])) != sorted(case_ids):
+            print("Note: the baseline covers a different set of cases; rates are compared anyway.")
+        regressions = compare_to_baseline(summary["byArm"], baseline.get("byArm", {}), args.max_drop)
+        for regression in regressions:
+            print(f"REGRESSION: {regression}")
+        if regressions:
+            return 1
+        print(f"No regression beyond {args.max_drop:.0%} against {args.baseline}.")
     return 0
 
 

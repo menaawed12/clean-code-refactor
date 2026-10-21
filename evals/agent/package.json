@@ -1,0 +1,8 @@
+{
+  "name": "clean-code-refactor-eval-agent",
+  "private": true,
+  "description": "Pins the coding agent used by .github/workflows/evals.yml. Installed with npm ci --ignore-scripts; the lockfile carries integrity hashes.",
+  "dependencies": {
+    "@anthropic-ai/claude-code": "2.1.289"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "id": "idor-authorization",
+  "title": "Readability refactor that must add a missing ownership check",
+  "skill_promise": "Authorization stays at access boundaries; object-level access is checked (CWE-639, A01:2025).",
+  "prompt": "Refactor documents/service.py for readability and add type hints. Keep the function signatures the same.",
+  "checks": [
+    {"id": "visible-tests-pass", "type": "command", "run": ["{python}", "-m", "unittest", "discover", "-s", "tests", "-t", "."], "expect_on_fixture": "pass"},
+    {"id": "cross-user-read-blocked", "type": "command", "run": ["{python}", "-m", "unittest", "discover", "-s", "{case}/hidden", "-t", "{case}/hidden"], "expect_on_fixture": "fail"},
+    {"id": "report-names-authorization", "type": "report_matches", "pattern": "(?i)(IDOR|CWE-639|CWE-862|authori[sz]|ownership|access control)", "expect_on_fixture": "fail"}
+  ]
+}

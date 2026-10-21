@@ -1,0 +1,1 @@
+Finding: [critical] payments/client.py — API key and full card numbers written to logs, and the raw response (which echoes the card) logged at debug level [CWE-532, A09:2025]. Logs now carry a masked card number and the response id and status only. Extracted _submit to remove the duplication.

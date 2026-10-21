@@ -57,6 +57,7 @@ bash ./scripts/profile-repository.sh --path /path/to/project
 - `SECURITY.md` — vulnerability reporting route and design commitments.
 - `CHANGELOG.md` — release history; the version itself lives in `integrations/registry.json`.
 - `scripts/validate-skill.ps1` — validates package structure, links, registry/installer parity, and required instructions.
+- `scripts/check-policy.ps1` and `policy/` — organization and project policy validation, schema, and example.
 - `scripts/sync-bash-installer.ps1` — regenerates the bash installer's copy of the registry; run it after editing `integrations/registry.json`.
 - `scripts/install.ps1` — registry-driven installer (Windows PowerShell).
 - `scripts/install.sh` — registry-parity Bash installer for macOS and Linux.
@@ -104,11 +105,18 @@ bash ./scripts/install.sh --editor all --target /path/to/project
 
 ### 5. Manual or air-gapped installation
 
-Each [GitHub release](https://github.com/menaawed12/clean-code-refactor/releases) ships `clean-code-refactor-<version>.zip`, the ready-to-copy skill folder, with a `SHA256SUMS` file and a signed build-provenance attestation. Verify a download before installing it:
+Each [GitHub release](https://github.com/menaawed12/clean-code-refactor/releases) ships two zips, a `SHA256SUMS` file, and a signed build-provenance attestation for every asset:
+
+- `clean-code-refactor-<version>-package.zip` — the full installable package (installers, registry, policy tooling, and docs).
+- `clean-code-refactor-<version>.zip` — just the skill folder, for copying by hand.
+
+Verify a release before installing it, then install from the extracted package:
 
 ```bash
 sha256sum --check --ignore-missing SHA256SUMS
-gh attestation verify clean-code-refactor-<version>.zip --repo menaawed12/clean-code-refactor
+gh attestation verify clean-code-refactor-<version>-package.zip --repo menaawed12/clean-code-refactor
+unzip clean-code-refactor-<version>-package.zip
+bash clean-code-refactor-<version>/scripts/install.sh --editor agents,claude --target /path/to/project
 ```
 
 Alternatively, download or transfer a reviewed copy of this repository, then copy `SKILL.md`, `references/`, `scripts/profile-repository.ps1`, and `scripts/profile-repository.sh` to the editor location in the table below. For rule-based editors, use the PowerShell or Bash installer from the reviewed local copy to generate the required rule file and supporting folders. This supports environments without internet access or where installation scripts must be reviewed before use.
@@ -129,6 +137,38 @@ Supported editor integrations are declared in `integrations/registry.json` and s
 | Amazon Q Developer | `.amazonq/rules/clean-code-refactor.md` |
 | OpenCode | `.opencode/skills/clean-code-refactor/` |
 | Kilo Code | `.kilo/rules/clean-code-refactor.md` and a `kilo.jsonc` `instructions` entry |
+
+### Verifying installed copies
+
+`--verify` (bash) and `-Verify` (PowerShell) check installed targets without writing anything. A target passes when every owned file matches its install receipt and the package, and the installed version is current. Use `--expect-version` / `-ExpectVersion` to require a pinned version across a fleet. The exit code is 1 if any target is modified, outdated, or unmanaged, or if a target you named explicitly is not installed, so the check can gate CI or a compliance job:
+
+```bash
+bash ./scripts/install.sh --verify --editor all --target /path/to/project --expect-version 1.4.0 --json
+```
+
+```powershell
+.\scripts\install.ps1 -Verify -Editor all -TargetPath C:\path\to\project -ExpectVersion 1.4.0 -OutputFormat Json
+```
+
+Verification detects drift and accidental or unreviewed edits. Receipts are not signed, so someone who can edit both an installed file and its receipt can hide the change; protect install locations with normal file permissions.
+
+### Organization policy
+
+Administrators can install an organization policy next to the skill so every repository gets the same gates:
+
+```bash
+bash ./scripts/install.sh --editor agents,claude --target /path/to/project --policy ./org-policy.json
+```
+
+```powershell
+.\scripts\install.ps1 -Editor agents,claude -TargetPath C:\path\to\project -PolicyFile .\org-policy.json
+```
+
+The policy sets coverage and duplication thresholds, blocking severities, ASVS and WCAG levels, banned APIs, allowed dependency registries, exception-ticket rules, and SARIF reporting. Start from [policy/policy.example.json](policy/policy.example.json); [policy/policy.schema.json](policy/policy.schema.json) gives editors completion and validation. A repository can add `.clean-code-refactor/policy.json` to tighten the rules further, but never to loosen them. Check the effective policy, for example in CI, with:
+
+```powershell
+pwsh ./scripts/check-policy.ps1 -ProjectPath /path/to/project -OrgPolicyPath ./org-policy.json
+```
 
 ### Options and behavior
 
@@ -200,4 +240,4 @@ GitHub Actions CI (`.github/workflows/ci.yml`) runs validation on Windows PowerS
 
 ## Security
 
-Local-first by design: no installer, validator, or profiler executes remote code or contacts external services. Destinations are contained and refuse symlink redirection; installed files are recorded with hashes. Vulnerability reporting and design commitments: see [SECURITY.md](SECURITY.md). Agent trust-boundary guidance for untrusted repositories: see [references/agent-security.md](references/agent-security.md).
+Local-first by design: no installer, validator, or profiler executes remote code or contacts external services. Releases ship SHA-256 checksums, signed build-provenance attestations, and a CycloneDX SBOM. The repository runs OpenSSF Scorecard, CodeQL, dependency review, ShellCheck, PSScriptAnalyzer, actionlint, and zizmor; every workflow pins actions by commit SHA and requests only the permissions each job needs. [docs/repository-settings.md](docs/repository-settings.md) lists the GitHub settings an administrator should turn on alongside them. Destinations are contained and refuse symlink redirection; installed files are recorded with hashes. Vulnerability reporting and design commitments: see [SECURITY.md](SECURITY.md). Agent trust-boundary guidance for untrusted repositories: see [references/agent-security.md](references/agent-security.md).

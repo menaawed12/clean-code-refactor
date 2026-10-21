@@ -2,6 +2,27 @@
 
 All notable changes to this package are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the package uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The version is defined once in `integrations/registry.json`; `scripts/validate-skill.ps1` fails if `SKILL.md`, `scripts/install.sh`, or this file disagree with it.
 
+## [1.4.0] - Unreleased
+
+### Added
+
+- Organization and project policy. `policy.json` installed next to the skill (`install.sh --policy`, `install.ps1 -PolicyFile`) sets organization gates, standards levels, banned APIs, dependency rules, exception tickets, and reporting. `.clean-code-refactor/policy.json` in a repository may only tighten them; loosening attempts are ignored and reported. `scripts/check-policy.ps1` validates policies and prints the effective policy; `policy/policy.schema.json` and `policy/policy.example.json` document the format.
+
+- `--verify` / `-Verify` checks installed targets without writing: every owned file must match its receipt and the package, and the version must be current (or match `--expect-version` / `-ExpectVersion`). It exits 1 on modified, outdated, or unmanaged installs, for CI and compliance checks.
+- Releases also publish `clean-code-refactor-<version>-package.zip`, the full installable package, so administrators can verify a release and install from it without cloning the repository.
+
+- Security workflows: OpenSSF Scorecard (published results and code scanning), CodeQL for the workflows and the Python tooling, and dependency review on pull requests, all pinned by commit SHA.
+- Releases include a reproducible CycloneDX 1.6 SBOM (`clean-code-refactor-<version>.cdx.json`), covered by the checksums and attestations.
+- Evals as a regression gate: pass^k (every run of a case passes), `--baseline` / `--max-drop` / `--write-baseline` in `evals/run_evals.py`, unit tests for the metric logic, and `.github/workflows/evals.yml`, which runs the suite weekly in a protected environment with a lockfile-pinned agent CLI installed without install scripts.
+- Four eval cases: `idor-authorization`, `ssrf-url-fetch` (including DNS that resolves to loopback), `secrets-in-logs`, and `unneeded-dependency`.
+- `.github/CODEOWNERS`, and `docs/repository-settings.md` listing the rulesets, release, code security, Actions, and environment settings an administrator should apply.
+
+### Fixed
+
+- The bash installer never reported a target as up-to-date: it wrote `SKILL.md` without its final newline and compared generated rule files with the source `SKILL.md`. The PowerShell installer had the same rule-file comparison bug. Re-runs now report up-to-date and rewrite nothing, and the two installers produce byte-identical installs that each recognizes as current.
+- `install.sh --json` printed progress messages to standard output on a first install, so the output was not valid JSON.
+- The bash test that claimed to check up-to-date detection only searched for the word `upToDate`, which every summary contains. It now checks the counts.
+
 ## [1.3.0] - Unreleased
 
 ### Added
