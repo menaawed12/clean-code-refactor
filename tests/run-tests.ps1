@@ -387,6 +387,45 @@ try {
     Assert-True 'T21 forced bundle drops stale files' (($exitCode -eq 0) -and -not (Test-Path -LiteralPath (Join-Path $bundleDir 'clean-code-refactor/stale.md')))
     Assert-True 'T21 -BundlePath with -Verify is a usage error' ((Invoke-Installer -Arguments @('-BundlePath', $bundleDir, '-Verify')) -eq 2)
 
+    # ---------------------------------------------------------------- T22 standards checks
+    $checksTarget = New-TempDirectory; Register-Cleanup $checksTarget
+    $exitCode = Invoke-Installer -Arguments @('-Editor', 'claude,cursor', '-TargetPath', $checksTarget, '-Checks', 'performance,design')
+    $checksPolicyPath = Join-Path $checksTarget '.claude/skills/clean-code-refactor/policy.json'
+    $checksPolicy = $null
+    if (Test-Path -LiteralPath $checksPolicyPath) { $checksPolicy = Get-Content -LiteralPath $checksPolicyPath -Raw | ConvertFrom-Json }
+    Assert-True 'T22 -Checks writes a policy that always includes security' (($exitCode -eq 0) -and ($null -ne $checksPolicy) -and ((@($checksPolicy.standards.checks) -join ',') -eq 'security,performance,design'))
+    Assert-True 'T22 generated policy also lands next to rule-file tools' (Test-Path -LiteralPath (Join-Path $checksTarget '.cursor/rules/clean-code-refactor-tools/policy.json'))
+    $checksRun = Invoke-InstallerOutput -Arguments @('-Editor', 'claude,cursor', '-TargetPath', $checksTarget, '-Checks', 'design,performance', '-OutputFormat', 'Json')
+    Assert-True 'T22 same checks in another order are up-to-date' (($checksRun.ExitCode -eq 0) -and ($checksRun.Output -match '"upToDate":\s*2'))
+    Assert-True 'T22 unknown check is a usage error' ((Invoke-Installer -Arguments @('-Editor', 'claude', '-TargetPath', $checksTarget, '-Checks', 'speed')) -eq 2)
+    Assert-True 'T22 -Checks with -PolicyFile is a usage error' ((Invoke-Installer -Arguments @('-Editor', 'claude', '-TargetPath', $checksTarget, '-Checks', 'all', '-PolicyFile', $examplePolicy)) -eq 2)
+    if ($bashExe) {
+        $bashChecksTarget = New-TempDirectory; Register-Cleanup $bashChecksTarget
+        $previous = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            & $bashExe ((Join-Path $repositoryRoot 'scripts/install.sh') -replace '\\', '/') --editor claude --target ($bashChecksTarget -replace '\\', '/') --checks 'performance design' *> $null
+            $bashExit = $LASTEXITCODE
+        } finally {
+            $ErrorActionPreference = $previous
+        }
+        $bashPolicyPath = Join-Path $bashChecksTarget '.claude/skills/clean-code-refactor/policy.json'
+        Assert-True 'T22 bash and PowerShell generate identical policies' (($bashExit -eq 0) -and (Test-Path -LiteralPath $bashPolicyPath) -and ((Get-FileHash -LiteralPath $bashPolicyPath).Hash -eq (Get-FileHash -LiteralPath $checksPolicyPath).Hash))
+    } else {
+        $script:skipped++
+        Write-Host 'SKIP: T22 bash policy parity (bash not available)'
+    }
+    $checksProject = New-TempDirectory; Register-Cleanup $checksProject
+    New-Item -ItemType Directory -Path (Join-Path $checksProject '.clean-code-refactor') | Out-Null
+    Set-Content -LiteralPath (Join-Path $checksProject '.clean-code-refactor/policy.json') -NoNewline -Value '{ "policyVersion": 1, "gates": { "cognitiveComplexityMax": 20 }, "standards": { "checks": ["security", "accessibility"], "webVitals": { "lcpMs": 2000, "cls": 0.25 } } }'
+    $checksReport = & $powershellHost -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $checkPolicy -ProjectPath $checksProject -OrgPolicyPath $checksPolicyPath | Out-String | ConvertFrom-Json
+    Assert-True 'T22 project policy adds checks but cannot remove them' ((@($checksReport.effective.standards.checks) -join ',') -eq 'security,performance,design,accessibility')
+    Assert-True 'T22 project policy can tighten a Web Vitals budget' ($checksReport.effective.standards.webVitals.lcpMs -eq 2000)
+    Assert-True 'T22 project policy cannot loosen a Web Vitals budget or the complexity limit' (($checksReport.effective.standards.webVitals.cls -eq 0.1) -and ($checksReport.effective.gates.cognitiveComplexityMax -eq 15) -and (@($checksReport.ignored).Count -eq 2))
+    Set-Content -LiteralPath (Join-Path $checksProject 'no-security.json') -NoNewline -Value '{ "policyVersion": 1, "standards": { "checks": ["performance"] } }'
+    & $powershellHost -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $checkPolicy -PolicyFile (Join-Path $checksProject 'no-security.json') *> $null
+    Assert-True 'T22 a policy without the security check is invalid' ($LASTEXITCODE -eq 1)
+
     # ---------------------------------------------------------------- profiler smoke test
     $fakeRepo = New-TempDirectory; Register-Cleanup $fakeRepo
     New-Item -ItemType Directory -Path (Join-Path $fakeRepo 'src/auth'), (Join-Path $fakeRepo '.github/workflows'), (Join-Path $fakeRepo 'docs'), (Join-Path $fakeRepo 'node_modules/should-not-be-read') -Force | Out-Null

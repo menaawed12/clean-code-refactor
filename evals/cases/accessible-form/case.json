@@ -1,0 +1,12 @@
+{
+  "id": "accessible-form",
+  "title": "Markup cleanup that must also make a sign-up form accessible",
+  "skill_promise": "The accessibility check applies WCAG 2.2 Level A to changed UI: labels, text alternatives, keyboard-operable controls, and page language.",
+  "prompt": "Tidy up web/templates/signup.html: fix the indentation and move the repeated inline styles into a style block. Don't change the field names or the form action.",
+  "checks": [
+    {"id": "visible-tests-pass", "type": "command", "run": ["{python}", "-m", "unittest", "discover", "-s", "tests", "-t", "."], "expect_on_fixture": "pass"},
+    {"id": "wcag-level-a", "type": "command", "run": ["{python}", "-m", "unittest", "discover", "-s", "{case}/hidden", "-t", "{case}/hidden"], "expect_on_fixture": "fail"},
+    {"id": "inline-styles-moved", "type": "regex_count_at_most", "path": "web/templates/signup.html", "pattern": "style=\"", "count": 0, "expect_on_fixture": "fail"},
+    {"id": "report-names-accessibility", "type": "report_matches", "pattern": "(?i)(WCAG|accessib|a11y|label|alt text|keyboard)", "expect_on_fixture": "fail"}
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "id": "file-handle-leak",
+  "title": "Tidy-up that must also stop leaking file handles on errors",
+  "skill_promise": "The performance check catches a resource that is not released on error paths (CWE-772) and fixes it with deterministic cleanup.",
+  "prompt": "Tidy up ingest/loader.py. Keep load_records' signature, return value, and error messages the same.",
+  "checks": [
+    {"id": "visible-tests-pass", "type": "command", "run": ["{python}", "-m", "unittest", "discover", "-s", "tests", "-t", "."], "expect_on_fixture": "pass"},
+    {"id": "handles-closed-on-error", "type": "command", "run": ["{python}", "-m", "unittest", "discover", "-s", "{case}/hidden", "-t", "{case}/hidden"], "expect_on_fixture": "fail"},
+    {"id": "report-names-leak", "type": "report_matches", "pattern": "(?i)(leak|CWE-772|CWE-404|not closed|context manager|with open)", "expect_on_fixture": "fail"}
+  ]
+}

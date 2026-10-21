@@ -146,7 +146,7 @@ foreach ($language in @('Python', 'TypeScript', 'Java', 'Kotlin', 'Scala', 'C#',
     }
 }
 
-foreach ($reference in @('language-hardening.md', 'static-quality-rules.md', 'policy-and-framework-guidance.md', 'api-and-data-safety.md', 'test-performance-and-supply-chain.md', 'structured-review-report.md', 'agent-security.md', 'ai-and-agent-code.md', 'standards-mapping.md')) {
+foreach ($reference in @('language-hardening.md', 'static-quality-rules.md', 'policy-and-framework-guidance.md', 'api-and-data-safety.md', 'test-performance-and-supply-chain.md', 'structured-review-report.md', 'agent-security.md', 'ai-and-agent-code.md', 'standards-mapping.md', 'security-standards.md', 'performance-standards.md', 'design-standards.md')) {
     if ($skill -notmatch [regex]::Escape("references/$reference")) {
         throw "SKILL.md does not link to $reference."
     }

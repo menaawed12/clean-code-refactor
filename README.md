@@ -50,6 +50,9 @@ bash ./scripts/profile-repository.sh --path /path/to/project
 - `references/test-performance-and-supply-chain.md` — test quality, performance, resilience, and dependency guidance.
 - `references/structured-review-report.md` — severity-based review-report format.
 - `references/ai-and-agent-code.md` — rules for code that calls language models, builds prompts, retrieves context, or exposes tools and MCP servers to agents.
+- `references/security-standards.md` — security checklists: OWASP Top 10:2025, ASVS 5.0 by chapter, CWE Top 25 (2025), OWASP API Security Top 10, MASVS, and secrets handling.
+- `references/performance-standards.md` — performance checklists: Core Web Vitals budgets, algorithmic complexity, N+1 queries and data access, memory and resource leaks, and concurrency.
+- `references/design-standards.md` — design checklists: SOLID, clean architecture, API design guidelines, and WCAG 2.2 accessibility and UI design by level.
 - `references/standards-mapping.md` — maps findings to OWASP Top 10:2025, CWE Top 25 (2025), OWASP LLM and Agentic Top 10, ASVS 5.0, NIST SSDF, SLSA v1.2, and WCAG 2.2 identifiers.
 - `references/agent-security.md` — agent trust boundaries: untrusted repository content, tool-output injection, command discovery versus execution, and scoped permissions.
 - `integrations/registry.json` — machine-readable editor/agent target registry (single source of truth for installers).
@@ -193,11 +196,34 @@ bash ./scripts/install.sh --editor agents,claude --target /path/to/project --pol
 .\scripts\install.ps1 -Editor agents,claude -TargetPath C:\path\to\project -PolicyFile .\org-policy.json
 ```
 
-The policy sets coverage and duplication thresholds, blocking severities, ASVS and WCAG levels, banned APIs, allowed dependency registries, exception-ticket rules, and SARIF reporting. Start from [policy/policy.example.json](policy/policy.example.json); [policy/policy.schema.json](policy/policy.schema.json) gives editors completion and validation. A repository can add `.clean-code-refactor/policy.json` to tighten the rules further, but never to loosen them. Check the effective policy, for example in CI, with:
+The policy sets coverage, duplication, and cognitive complexity thresholds, blocking severities, the standards checks to apply, ASVS and WCAG levels, Core Web Vitals budgets, banned APIs, allowed dependency registries, exception-ticket rules, and SARIF reporting. Start from [policy/policy.example.json](policy/policy.example.json); [policy/policy.schema.json](policy/policy.schema.json) gives editors completion and validation. A repository can add `.clean-code-refactor/policy.json` to tighten the rules further, but never to loosen them. Check the effective policy, for example in CI, with:
 
 ```powershell
 pwsh ./scripts/check-policy.ps1 -ProjectPath /path/to/project -OrgPolicyPath ./org-policy.json
 ```
+
+### Standards checks
+
+The skill checks changed code against four groups of standards. All four are on by default, and `security` is always on:
+
+| Check | Standards |
+| --- | --- |
+| `security` | OWASP Top 10:2025, OWASP ASVS 5.0 (at the policy's level), CWE Top 25 (2025), OWASP API Security Top 10, OWASP MASVS, and secrets handling |
+| `performance` | Core Web Vitals (LCP, INP, CLS budgets), algorithmic complexity, N+1 queries, memory and resource leaks, and concurrency |
+| `design` | SOLID, clean architecture and module boundaries, cognitive complexity, and API design guidelines (HTTP semantics, RFC 9457 errors, pagination, versioning) |
+| `accessibility` | WCAG 2.2 at the policy's level (AA by default) and UI design consistency |
+
+Choose them with `standards.checks` in a policy file, or let the installer write a minimal policy for you:
+
+```bash
+bash ./scripts/install.sh --editor claude --target /path/to/project --checks performance,design
+```
+
+```powershell
+.\scripts\install.ps1 -Editor claude -TargetPath C:\path\to\project -Checks performance,design
+```
+
+`--checks all` / `-Checks all` selects every check. `--checks` cannot be combined with `--policy`; set `standards.checks` in your policy file instead. A repository's `.clean-code-refactor/policy.json` can add checks, never remove them.
 
 ### Options and behavior
 

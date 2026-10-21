@@ -52,6 +52,11 @@ Options:
       --policy FILE     Organization policy (JSON) to install next to the skill as
                         policy.json. Validated with scripts/check-policy.ps1 when
                         PowerShell is available. Later runs without --policy keep it.
+      --checks LIST     Standards checks to apply, as a comma list or 'all':
+                        security, performance, design, accessibility. Writes a
+                        minimal organization policy with standards.checks set;
+                        security is always included. Cannot be combined with
+                        --policy (set standards.checks in that file instead).
       --bundle DIR      Instead of installing, write upload-ready copies to DIR: the
                         skill folder, a zip of it (for claude.ai, the Claude desktop
                         app, and ChatGPT skills), and chatgpt-instructions.md (for a
@@ -100,6 +105,7 @@ force=0
 list_only=0
 json_out=0
 policy_file=""
+checks_list=""
 verify_mode=0
 expect_version=""
 bundle_dir=""
@@ -118,6 +124,7 @@ while [[ $# -gt 0 ]]; do
     --verify) verify_mode=1; shift ;;
     --expect-version) [ $# -ge 2 ] || { echo "Error: --expect-version needs a version." >&2; exit 2; }; expect_version="$2"; shift 2 ;;
     --policy) [ $# -ge 2 ] || { echo "Error: --policy needs a file." >&2; exit 2; }; policy_file="$2"; shift 2 ;;
+    --checks) [ $# -ge 2 ] || { echo "Error: --checks needs a list." >&2; exit 2; }; checks_list="$2"; shift 2 ;;
     --bundle) [ $# -ge 2 ] || { echo "Error: --bundle needs a directory." >&2; exit 2; }; bundle_dir="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
@@ -285,6 +292,31 @@ while IFS= read -r -d '' f; do
   SOURCE_RELS+=("$REFERENCE_DIR/${f#"$reference_source"/}")
 done < <(find "$reference_source" -type f -print0)
 for tool in "${TOOL_SOURCES[@]}"; do SOURCE_RELS+=("$tool"); done
+
+# --checks: generate a minimal organization policy that selects the standards checks.
+STANDARD_CHECKS=(security performance design accessibility)
+generated_policy=""
+if [ -n "$checks_list" ]; then
+  [ -z "$policy_file" ] || fail_usage "--checks cannot be combined with --policy; set standards.checks in the policy file instead."
+  selected=" security "
+  IFS=', ' read -r -a requested_checks <<< "$checks_list"
+  [ "${#requested_checks[@]}" -gt 0 ] || fail_usage "--checks needs at least one check."
+  for check in "${requested_checks[@]}"; do
+    if [ "$check" = "all" ]; then selected=" ${STANDARD_CHECKS[*]} "; continue; fi
+    case " ${STANDARD_CHECKS[*]} " in
+      *" $check "*) selected="$selected$check " ;;
+      *) fail_usage "Unknown check: '$check'. Known checks: ${STANDARD_CHECKS[*]}, all" ;;
+    esac
+  done
+  checks_json=""
+  for check in "${STANDARD_CHECKS[@]}"; do
+    case "$selected" in *" $check "*) checks_json="$checks_json${checks_json:+, }\"$check\"" ;; esac
+  done
+  generated_policy="$(mktemp "${TMPDIR:-/tmp}/clean-code-refactor-policy.XXXXXX")"
+  trap 'rm -f "$generated_policy"' EXIT
+  printf '{\n  "policyVersion": 1,\n  "standards": { "checks": [%s] }\n}\n' "$checks_json" > "$generated_policy"
+  policy_file="$generated_policy"
+fi
 
 # Organization policy: validated before anything is written.
 policy_source=""

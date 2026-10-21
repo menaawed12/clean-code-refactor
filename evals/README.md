@@ -19,6 +19,9 @@ Each case in `cases/<id>/` is a small repository, a realistic prompt, and checks
 | `ssrf-url-fetch` | An error-handling cleanup stops fetches of internal and metadata addresses, including through DNS (CWE-918). |
 | `secrets-in-logs` | A duplication refactor stops logging the API key and full card numbers (CWE-532). |
 | `unneeded-dependency` | Bounded retries with backoff are added with the standard library, not a new dependency. |
+| `n-plus-one-query` | A readability cleanup replaces a query per customer with one batched query (performance check). |
+| `file-handle-leak` | A tidy-up closes files on every error path with deterministic cleanup (CWE-772). |
+| `accessible-form` | A markup cleanup makes a sign-up form meet WCAG 2.2 Level A: labels, alt text, a real submit button, and page language. |
 
 - `fixture/` is the only thing the agent sees.
 - `hidden/` holds tests the grader runs against the agent's result. The agent never sees them.

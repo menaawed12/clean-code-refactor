@@ -42,6 +42,8 @@ $ErrorActionPreference = 'Stop'
 $maxPolicyBytes = 65536
 $severityOrder = @('blocker', 'critical', 'major', 'minor')
 $wcagOrder = @('A', 'AA', 'AAA')
+$checkOrder = @('security', 'performance', 'design', 'accessibility')
+$webVitalLimits = [ordered]@{ lcpMs = @(100, 10000); inpMs = @(10, 2000) }
 $profiles = @('strict', 'legacy-safe', 'api-service', 'frontend', 'mobile', 'data', 'infrastructure', 'ai-application')
 
 $script:errors = [System.Collections.Generic.List[string]]::new()
@@ -56,8 +58,8 @@ function New-DefaultPolicy {
         policyVersion = 1
         organization  = $null
         profile       = [ordered]@{ default = $null; allowLegacySafe = $true }
-        gates         = [ordered]@{ newCodeCoverageMin = 80; newCodeDuplicationMax = 3; blockingSeverities = @('blocker', 'critical') }
-        standards     = [ordered]@{ asvsLevel = $null; wcagLevel = 'AA' }
+        gates         = [ordered]@{ newCodeCoverageMin = 80; newCodeDuplicationMax = 3; cognitiveComplexityMax = 15; blockingSeverities = @('blocker', 'critical') }
+        standards     = [ordered]@{ asvsLevel = $null; wcagLevel = 'AA'; checks = $checkOrder; webVitals = [ordered]@{ lcpMs = 2500; inpMs = 200; cls = 0.1 } }
         bannedApis    = @()
         dependencies  = [ordered]@{ allowedRegistries = @(); requireApprovalForNew = $false; minimumReleaseAgeDays = 0 }
         exceptions    = [ordered]@{ requireTicket = $false; ticketPattern = $null }
@@ -90,6 +92,7 @@ function Test-AllowedKey {
 }
 
 function Test-Bool { param($Value, [string]$Source, [string]$Where) if ($Value -isnot [bool]) { Add-PolicyError $Source "$Where must be true or false" } }
+function Test-IsNumber { param($Value) return ($Value -is [int] -or $Value -is [long] -or $Value -is [double] -or $Value -is [decimal]) }
 function Test-IntRange {
     param($Value, [int]$Min, [int]$Max, [string]$Source, [string]$Where)
     if (($Value -isnot [int] -and $Value -isnot [long]) -or $Value -lt $Min -or $Value -gt $Max) { Add-PolicyError $Source "$Where must be a whole number from $Min to $Max" }
@@ -110,9 +113,10 @@ function Test-Policy {
     if (Test-HasProp $profileSection 'allowLegacySafe') { Test-Bool (Get-Prop $profileSection 'allowLegacySafe') $Source 'profile.allowLegacySafe' }
 
     $gates = Get-Prop $Policy 'gates'
-    Test-AllowedKey $gates @('newCodeCoverageMin', 'newCodeDuplicationMax', 'blockingSeverities') $Source 'gates'
+    Test-AllowedKey $gates @('newCodeCoverageMin', 'newCodeDuplicationMax', 'cognitiveComplexityMax', 'blockingSeverities') $Source 'gates'
     if (Test-HasProp $gates 'newCodeCoverageMin') { Test-IntRange (Get-Prop $gates 'newCodeCoverageMin') 0 100 $Source 'gates.newCodeCoverageMin' }
     if (Test-HasProp $gates 'newCodeDuplicationMax') { Test-IntRange (Get-Prop $gates 'newCodeDuplicationMax') 0 100 $Source 'gates.newCodeDuplicationMax' }
+    if (Test-HasProp $gates 'cognitiveComplexityMax') { Test-IntRange (Get-Prop $gates 'cognitiveComplexityMax') 1 100 $Source 'gates.cognitiveComplexityMax' }
     if (Test-HasProp $gates 'blockingSeverities') {
         $severities = @(Get-Prop $gates 'blockingSeverities')
         if ($severities.Count -eq 0 -or @($severities | Where-Object { $severityOrder -notcontains $_ }).Count -gt 0) { Add-PolicyError $Source "gates.blockingSeverities must list one or more of: $($severityOrder -join ', ')" }
@@ -120,9 +124,24 @@ function Test-Policy {
     }
 
     $standards = Get-Prop $Policy 'standards'
-    Test-AllowedKey $standards @('asvsLevel', 'wcagLevel') $Source 'standards'
+    Test-AllowedKey $standards @('asvsLevel', 'wcagLevel', 'checks', 'webVitals') $Source 'standards'
     if (Test-HasProp $standards 'asvsLevel') { Test-IntRange (Get-Prop $standards 'asvsLevel') 1 3 $Source 'standards.asvsLevel' }
     if ((Test-HasProp $standards 'wcagLevel') -and $wcagOrder -cnotcontains (Get-Prop $standards 'wcagLevel')) { Add-PolicyError $Source 'standards.wcagLevel must be A, AA, or AAA' }
+    if (Test-HasProp $standards 'checks') {
+        $checks = @(Get-Prop $standards 'checks')
+        if ($checks.Count -eq 0 -or @($checks | Where-Object { $checkOrder -cnotcontains $_ }).Count -gt 0) { Add-PolicyError $Source "standards.checks must list one or more of: $($checkOrder -join ', ')" }
+        elseif ($checks -cnotcontains 'security') { Add-PolicyError $Source 'standards.checks must include security' }
+        elseif (@($checks | Select-Object -Unique).Count -ne $checks.Count) { Add-PolicyError $Source 'standards.checks must not repeat a check' }
+    }
+    $webVitals = Get-Prop $standards 'webVitals'
+    Test-AllowedKey $webVitals @('lcpMs', 'inpMs', 'cls') $Source 'standards.webVitals'
+    foreach ($name in $webVitalLimits.Keys) {
+        if (Test-HasProp $webVitals $name) { Test-IntRange (Get-Prop $webVitals $name) $webVitalLimits[$name][0] $webVitalLimits[$name][1] $Source "standards.webVitals.$name" }
+    }
+    if (Test-HasProp $webVitals 'cls') {
+        $cls = Get-Prop $webVitals 'cls'
+        if (-not (Test-IsNumber $cls) -or $cls -lt 0 -or $cls -gt 1) { Add-PolicyError $Source 'standards.webVitals.cls must be a number from 0 to 1' }
+    }
 
     if (Test-HasProp $Policy 'bannedApis') {
         $ids = @{}
@@ -172,8 +191,14 @@ function Set-OrgPolicy {
     foreach ($section in @('profile', 'gates', 'standards', 'dependencies', 'exceptions', 'reporting')) {
         $values = Get-Prop $Policy $section
         if ($null -eq $values) { continue }
-        foreach ($name in $values.PSObject.Properties.Name) { $Effective[$section][$name] = $values.$name }
+        foreach ($name in $values.PSObject.Properties.Name) {
+            if ($section -eq 'standards' -and $name -eq 'webVitals') { continue }
+            $Effective[$section][$name] = $values.$name
+        }
     }
+    $webVitals = Get-Prop (Get-Prop $Policy 'standards') 'webVitals'
+    if ($null -ne $webVitals) { foreach ($name in $webVitals.PSObject.Properties.Name) { $Effective.standards.webVitals[$name] = $webVitals.$name } }
+    $Effective.standards.checks = @($checkOrder | Where-Object { @($Effective.standards.checks) -contains $_ })
     if (Test-HasProp $Policy 'bannedApis') { $Effective.bannedApis = @(Get-Prop $Policy 'bannedApis') }
     $Effective.gates.blockingSeverities = @($severityOrder | Where-Object { @($Effective.gates.blockingSeverities) -contains $_ })
 }
@@ -192,6 +217,10 @@ function Merge-ProjectPolicy {
         $value = Get-Prop $gates 'newCodeDuplicationMax'
         if ($value -le $Effective.gates.newCodeDuplicationMax) { $Effective.gates.newCodeDuplicationMax = $value } else { Add-Ignored 'gates.newCodeDuplicationMax' $value 'higher than the organization or default maximum' }
     }
+    if (Test-HasProp $gates 'cognitiveComplexityMax') {
+        $value = Get-Prop $gates 'cognitiveComplexityMax'
+        if ($value -le $Effective.gates.cognitiveComplexityMax) { $Effective.gates.cognitiveComplexityMax = $value } else { Add-Ignored 'gates.cognitiveComplexityMax' $value 'higher than the organization or default maximum' }
+    }
     if (Test-HasProp $gates 'blockingSeverities') {
         $union = @($Effective.gates.blockingSeverities) + @(Get-Prop $gates 'blockingSeverities')
         $Effective.gates.blockingSeverities = @($severityOrder | Where-Object { $union -contains $_ })
@@ -205,6 +234,17 @@ function Merge-ProjectPolicy {
     if (Test-HasProp $standards 'wcagLevel') {
         $value = Get-Prop $standards 'wcagLevel'
         if ($wcagOrder.IndexOf($value) -ge $wcagOrder.IndexOf($Effective.standards.wcagLevel)) { $Effective.standards.wcagLevel = $value } else { Add-Ignored 'standards.wcagLevel' $value 'lower than the organization or default level' }
+    }
+    if (Test-HasProp $standards 'checks') {
+        # A project may add checks, never remove them; its list is combined with the effective one.
+        $union = @($Effective.standards.checks) + @(Get-Prop $standards 'checks')
+        $Effective.standards.checks = @($checkOrder | Where-Object { $union -contains $_ })
+    }
+    $webVitals = Get-Prop $standards 'webVitals'
+    foreach ($name in @('lcpMs', 'inpMs', 'cls')) {
+        if (-not (Test-HasProp $webVitals $name)) { continue }
+        $value = Get-Prop $webVitals $name
+        if ($value -le $Effective.standards.webVitals[$name]) { $Effective.standards.webVitals[$name] = $value } else { Add-Ignored "standards.webVitals.$name" $value 'looser than the organization or default budget' }
     }
 
     if (Test-HasProp $Policy 'bannedApis') {

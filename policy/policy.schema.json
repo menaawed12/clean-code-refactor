@@ -24,6 +24,7 @@
       "properties": {
         "newCodeCoverageMin": { "type": "integer", "minimum": 0, "maximum": 100 },
         "newCodeDuplicationMax": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "cognitiveComplexityMax": { "type": "integer", "minimum": 1, "maximum": 100, "description": "Highest cognitive complexity allowed for a changed function. Default 15." },
         "blockingSeverities": {
           "type": "array",
           "minItems": 1,
@@ -38,7 +39,25 @@
       "additionalProperties": false,
       "properties": {
         "asvsLevel": { "type": "integer", "minimum": 1, "maximum": 3 },
-        "wcagLevel": { "enum": ["A", "AA", "AAA"] }
+        "wcagLevel": { "enum": ["A", "AA", "AAA"] },
+        "checks": {
+          "type": "array",
+          "description": "Standards checks to apply (references/*-standards.md). Default: all four. security is mandatory.",
+          "minItems": 1,
+          "uniqueItems": true,
+          "contains": { "const": "security" },
+          "items": { "enum": ["security", "performance", "design", "accessibility"] }
+        },
+        "webVitals": {
+          "type": "object",
+          "description": "Core Web Vitals budgets at the 75th percentile. Defaults are Google's 'good' thresholds.",
+          "additionalProperties": false,
+          "properties": {
+            "lcpMs": { "type": "integer", "minimum": 100, "maximum": 10000 },
+            "inpMs": { "type": "integer", "minimum": 10, "maximum": 2000 },
+            "cls": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        }
       }
     },
     "bannedApis": {
