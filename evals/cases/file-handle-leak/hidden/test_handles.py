@@ -1,14 +1,13 @@
 import builtins
 import json
 import tempfile
-import unittest
 from pathlib import Path
-from unittest import mock
+from unittest import TestCase, mock
 
 from ingest.loader import load_records
 
 
-class HandleTest(unittest.TestCase):
+class HandleTest(TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.root = Path(self.directory.name)
